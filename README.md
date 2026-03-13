@@ -1,9 +1,9 @@
-# @venkateshsirigineedi/bolt-table
+# bolt-table
 
 A high-performance, fully-featured React table component built on [TanStack Virtual](https://tanstack.com/virtual) and [@dnd-kit](https://dndkit.com). Only the rows visible in the viewport are ever in the DOM — making it fast for datasets of any size.
 
-[![npm version](https://img.shields.io/npm/v/@venkateshsirigineedi/bolt-table)](https://www.npmjs.com/package/@venkateshsirigineedi/bolt-table)
-[![license](https://img.shields.io/npm/l/@venkateshsirigineedi/bolt-table)](./LICENSE)
+[![npm version](https://img.shields.io/npm/v/bolt-table)](https://www.npmjs.com/package/bolt-table)
+[![license](https://img.shields.io/npm/l/bolt-table)](./LICENSE)
 
 ---
 
@@ -31,7 +31,7 @@ A high-performance, fully-featured React table component built on [TanStack Virt
 ## Installation
 
 ```bash
-npm install @venkateshsirigineedi/bolt-table
+npm install bolt-table
 ```
 
 ### Peer dependencies
@@ -47,7 +47,7 @@ npm install @tanstack/react-virtual @dnd-kit/core @dnd-kit/sortable lucide-react
 ## Quick start
 
 ```tsx
-import { BoltTable, ColumnType } from '@venkateshsirigineedi/bolt-table';
+import { BoltTable, ColumnType } from 'bolt-table';
 
 interface User {
   id: string;
@@ -87,7 +87,7 @@ BoltTable uses browser APIs and must be wrapped in a client boundary. Remove the
 
 ```tsx
 'use client';
-import { BoltTable } from '@venkateshsirigineedi/bolt-table';
+import { BoltTable } from 'bolt-table';
 ```
 
 ---
@@ -491,11 +491,11 @@ import type {
   PaginationType,
   SortDirection,
   DataRecord,
-} from '@venkateshsirigineedi/bolt-table';
+} from 'bolt-table';
 ```
 
 ---
 
 ## License
 
-MIT © [Venkatesh Sirigineedi](https://github.com/venkateshsirigineedi)
+MIT © [Venkatesh Sirigineedi](https://github.com
