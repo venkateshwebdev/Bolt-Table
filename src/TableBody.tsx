@@ -619,7 +619,7 @@ const TableBody: React.FC<TableBodyProps> = ({
         style.right = `${stickyOffset}px`;
 
       if (isPinned) {
-        style.backgroundColor = (styles as any)?.pinnedBg ?? 'color-mix(in srgb, currentColor 4%, Canvas)';
+        style.backgroundColor = (styles as any)?.pinnedBg;
         if (styles?.pinnedCell) Object.assign(style, styles.pinnedCell);
       }
 
