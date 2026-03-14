@@ -3,6 +3,7 @@
 A high-performance, zero-dependency\* React table component. Only the rows visible in the viewport are ever in the DOM — making it fast for datasets of any size uisng [TanStack Virtual](https://tanstack.com/virtual).
 
 Checkout the examples / demo at [bolt-table](https://bolt-table.vercel.app/)
+Checkout the source code [here](https://github.com/venkateshwebdev/Bolt-Table)
 
 [![npm version](https://img.shields.io/npm/v/bolt-table)](https://www.npmjs.com/package/bolt-table)
 [![license](https://img.shields.io/npm/l/bolt-table)](./LICENSE)
