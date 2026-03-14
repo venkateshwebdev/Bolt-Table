@@ -1,8 +1,6 @@
 # bolt-table
 
-A high-performance, zero-dependency\* React table component built on [TanStack Virtual](https://tanstack.com/virtual). Only the rows visible in the viewport are ever in the DOM — making it fast for datasets of any size.
-
-\*Only peer dependency is `@tanstack/react-virtual` (+ React). No Tailwind, no CSS framework, no icon library required.
+A high-performance, zero-dependency\* React table component. Only the rows visible in the viewport are ever in the DOM — making it fast for datasets of any size uisng [TanStack Virtual](https://tanstack.com/virtual).
 
 [![npm version](https://img.shields.io/npm/v/bolt-table)](https://www.npmjs.com/package/bolt-table)
 [![license](https://img.shields.io/npm/l/bolt-table)](./LICENSE)
