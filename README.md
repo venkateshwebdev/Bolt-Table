@@ -4,9 +4,8 @@ A high-performance, zero-dependency\* React table component. Only the rows visib
 
 [![npm version](https://img.shields.io/npm/v/bolt-table)](https://www.npmjs.com/package/bolt-table)
 [![license](https://img.shields.io/npm/l/bolt-table)](./LICENSE)
-[![github](https://github.com/venkateshwebdev/Bolt-Table)]
-[![Website](https://bolt-table.vercel.app/)]
-
+[![github](https://img.shields.io/badge/GitHub-Source-181717?logo=github)](https://github.com/venkateshwebdev/Bolt-Table)
+[![website](https://img.shields.io/badge/Website-Live_Demo-blue?logo=vercel)](https://bolt-table.vercel.app/)
 
 ---
 
