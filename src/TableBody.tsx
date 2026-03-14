@@ -289,10 +289,6 @@ const Cell = React.memo(
     accentColor,
     isLoading,
   }: CellProps) => {
-    const justifyClass =
-      column.key === '__select__' || column.key === '__expand__'
-        ? 'justify-center'
-        : '';
     const isPinned = Boolean(column.pinned);
 
     // ── 1. Shimmer state ──────────────────────────────────────────────────────
@@ -308,9 +304,10 @@ const Cell = React.memo(
         column.shimmerRender()
       ) : (
         <div
-          className="bg-muted-foreground/15 animate-pulse rounded"
           style={{
-            // Vary widths across cells so skeletons look more natural
+            backgroundColor: 'rgba(100, 116, 139, 0.15)',
+            animation: 'bt-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            borderRadius: 4,
             width: `${SHIMMER_WIDTHS[(rowIndex + column.key.length) % SHIMMER_WIDTHS.length]}%`,
             height: 14,
           }}
@@ -319,8 +316,14 @@ const Cell = React.memo(
 
       return (
         <div
-          className={`flex items-center overflow-hidden border-b px-2 ${column.className ?? ''} ${classNames?.cell ?? ''} ${isPinned ? (classNames?.pinnedCell ?? '') : ''}`}
+          className={`${column.className ?? ''} ${classNames?.cell ?? ''} ${isPinned ? (classNames?.pinnedCell ?? '') : ''}`}
           style={{
+            display: 'flex',
+            alignItems: 'center',
+            overflow: 'hidden',
+            borderBottom: '1px solid #e5e7eb',
+            paddingLeft: 8,
+            paddingRight: 8,
             height: '100%',
             ...column.style,
             ...(isPinned ? styles?.pinnedCell : undefined),
@@ -350,8 +353,7 @@ const Cell = React.memo(
               rowSelection.onSelect?.(record, true, [record], e.nativeEvent);
               rowSelection.onChange?.([rowKey], [record], { type: 'single' });
             }}
-            className="cursor-pointer"
-            style={{ accentColor }}
+            style={{ cursor: 'pointer', accentColor }}
           />
         ) : (
           <input
@@ -360,8 +362,6 @@ const Cell = React.memo(
             disabled={checkboxProps.disabled}
             onChange={(e) => {
               e.stopPropagation();
-              // Read from the live prop rather than the closure to avoid stale
-              // state when the Cell memo skipped re-renders between selection changes
               const currentKeys = (rowSelection.selectedRowKeys ?? []).map(
                 (k) => String(k),
               );
@@ -383,15 +383,24 @@ const Cell = React.memo(
                 type: 'multiple',
               });
             }}
-            className="cursor-pointer"
-            style={{ accentColor }}
+            style={{ cursor: 'pointer', accentColor }}
           />
         );
 
       return (
         <div
-          className={`flex items-center overflow-hidden border-b px-2 ${justifyClass} ${column.className ?? ''} ${classNames?.cell ?? ''} `}
+          className={`${column.className ?? ''} ${classNames?.cell ?? ''}`}
           style={{
+            display: 'flex',
+            alignItems: 'center',
+            overflow: 'hidden',
+            borderBottom: '1px solid #e5e7eb',
+            paddingLeft: 8,
+            paddingRight: 8,
+            justifyContent:
+              column.key === '__select__' || column.key === '__expand__'
+                ? 'center'
+                : undefined,
             height: '100%',
             ...column.style,
             ...(isPinned ? styles?.pinnedCell : undefined),
@@ -413,8 +422,20 @@ const Cell = React.memo(
 
     return (
       <div
-        className={`flex items-center truncate overflow-hidden border-b px-2 ${justifyClass} ${column.className ?? ''} ${classNames?.cell ?? ''} `}
+        className={`${column.className ?? ''} ${classNames?.cell ?? ''}`}
         style={{
+          display: 'flex',
+          alignItems: 'center',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap' as const,
+          borderBottom: '1px solid #e5e7eb',
+          paddingLeft: 8,
+          paddingRight: 8,
+          justifyContent:
+            column.key === '__select__' || column.key === '__expand__'
+              ? 'center'
+              : undefined,
           height: '100%',
           ...column.style,
           ...(isPinned ? styles?.pinnedCell : undefined),
@@ -554,9 +575,6 @@ const TableBody: React.FC<TableBodyProps> = ({
 }) => {
   const virtualItems = rowVirtualizer.getVirtualItems();
   const totalSize = rowVirtualizer.getTotalSize();
-const theme = typeof document !== 'undefined' &&
-  document.documentElement.classList.contains('dark') ? 'dark' : 'light';
-
   /**
    * Pre-computed styles for each column's spacer div.
    * Memoized so column styles only recompute when columns, offsets,
@@ -596,12 +614,8 @@ const theme = typeof document !== 'undefined' &&
         style.right = `${stickyOffset}px`;
 
       if (isPinned) {
-        // Frosted glass effect: backdrop-blur + semi-transparent background
         style.backdropFilter = 'blur(14px)';
-        style.backgroundColor =
-          ((styles as any)?.pinnedBg ?? theme === 'dark')
-            ? '#10182890'
-            : '#f9fafb90';
+        style.backgroundColor = (styles as any)?.pinnedBg ?? 'rgba(255, 255, 255, 0.95)';
         if (styles?.pinnedCell) Object.assign(style, styles.pinnedCell);
       }
 
@@ -623,9 +637,13 @@ const theme = typeof document !== 'undefined' &&
 
         return (
           <div
-            className="truncate"
             key={`spacer-${colStyle.key}`}
-            style={colStyle.style}
+            style={{
+              ...colStyle.style,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap' as const,
+            }}
           >
             {virtualItems.map((virtualRow: VirtualItem) => {
               const row = data[virtualRow.index];
@@ -659,13 +677,19 @@ const theme = typeof document !== 'undefined' &&
                     left: 0,
                     right: 0,
                     height: `${virtualRow.size}px`,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap' as const,
                   }}
-                  className="truncate"
                 >
-                  {/* The cell itself only occupies rowHeight, not the full virtualRow.size */}
                   <div
-                    style={{ height: `${rowHeight}px`, position: 'relative' }}
-                    className="truncate"
+                    style={{
+                      height: `${rowHeight}px`,
+                      position: 'relative',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap' as const,
+                    }}
                   >
                     <Cell
                       value={cellValue}
@@ -732,10 +756,8 @@ const theme = typeof document !== 'undefined' &&
 
             const expandedContent = (
               <div
-                className={`${classNames?.expandedRow ?? ''}`}
+                className={classNames?.expandedRow ?? ''}
                 style={{
-                  // Sticky left:0 + fixed width = viewport-locked panel
-                  // regardless of how far the user has scrolled horizontally
                   position: 'sticky',
                   left: 0,
                   zIndex: 5,
@@ -744,12 +766,10 @@ const theme = typeof document !== 'undefined' &&
                       ? `${scrollAreaWidth}px`
                       : '100%',
                   overflow: 'auto',
-                  // Restore pointer events so the expanded content is interactive
                   pointerEvents: 'auto',
-                  borderBottom: '1px solid hsl(var(--border))',
-                  backgroundColor: 'hsl(var(--muted)/0.4)',
+                  borderBottom: '1px solid #e5e7eb',
+                  backgroundColor: 'rgba(248, 250, 252, 0.4)',
                   padding: 20,
-                  // Optional max height — makes the panel scrollable for tall content
                   ...(maxExpandedRowHeight
                     ? { maxHeight: `${maxExpandedRowHeight}px` }
                     : undefined),

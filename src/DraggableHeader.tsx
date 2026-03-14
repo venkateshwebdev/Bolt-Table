@@ -1,21 +1,21 @@
 'use client';
 
 import { useSortable } from '@dnd-kit/sortable';
-import {
-  ArrowDownAZ,
-  ArrowUpAZ,
-  EyeOff,
-  Filter,
-  FilterX,
-  GripVertical,
-  Pin,
-  PinOff,
-} from 'lucide-react';
 import React, { CSSProperties, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-
 import { ClassNamesTypes, StylesTypes } from './BoltTable';
+import {
+  type BoltTableIcons,
+  ArrowDownAZIcon,
+  ArrowUpAZIcon,
+  EyeOffIcon,
+  FilterIcon,
+  FilterXIcon,
+  GripVerticalIcon,
+  PinIcon,
+  PinOffIcon,
+} from './icons';
 import type {
   ColumnContextMenuItem,
   ColumnType,
@@ -196,6 +196,12 @@ interface DraggableHeaderProps {
    * ]}
    */
   customContextMenuItems?: ColumnContextMenuItem[];
+
+  /**
+   * Custom icon overrides from BoltTable's `icons` prop.
+   * Passed through automatically — do not set manually.
+   */
+  icons?: BoltTableIcons;
 }
 
 /**
@@ -256,6 +262,7 @@ const DraggableHeader = React.memo(
     onFilter,
     onClearFilter,
     customContextMenuItems,
+    icons,
   }: DraggableHeaderProps) => {
     const effectivelySortable = isColumnSortable(column);
     const effectivelyFilterable = isColumnFilterable(column);
@@ -291,9 +298,6 @@ const DraggableHeader = React.memo(
       // Pinned columns cannot be dragged (their position is fixed by pinning)
       disabled: Boolean(column.pinned),
     });
-
-const theme = typeof document !== 'undefined' &&
-  document.documentElement.classList.contains('dark') ? 'dark' : 'light';
 
     // ── Close context menu when clicking outside it ─────────────────────────
     useEffect(() => {
@@ -391,10 +395,7 @@ const theme = typeof document !== 'undefined' &&
       // separate from scrolling content behind them
       ...(isPinned
         ? {
-            backgroundColor:
-              ((styles as any)?.pinnedBg ?? theme === 'dark')
-                ? '#10182890'
-                : '#f9fafb90',
+            backgroundColor: (styles as any)?.pinnedBg ?? 'rgba(255, 255, 255, 0.95)',
             ...styles?.pinnedHeader,
           }
         : {}),
@@ -403,23 +404,27 @@ const theme = typeof document !== 'undefined' &&
       ...styles?.header,
     } as CSSProperties;
 
-    const baseClasses =
-      'bg-muted/40 group relative truncate flex h-9 items-center overflow-hidden backdrop-blur ';
-    const className = `${baseClasses} ${column.className ?? ''} ${classNames?.header ?? ''} ${classNames?.pinnedHeader ?? ''} `;
+    const headerStyle: CSSProperties = {
+      ...style,
+      backgroundColor: style.backgroundColor ?? 'rgba(248, 250, 252, 0.4)',
+      position: 'sticky' as const,
+      display: 'flex',
+      height: 36,
+      alignItems: 'center',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap' as const,
+      backdropFilter: 'blur(8px)',
+    };
 
     return (
       <>
-        {/*
-         * ── Header cell ────────────────────────────────────────────────────
-         * The outer div is the dnd-kit sortable node. It handles the drop
-         * target detection and applies the transform/transition for smooth
-         * reordering animations.
-         */}
         <div
           ref={setNodeRef}
           data-column-key={column.key}
-          style={style}
-          className={className}
+          data-bt-header=""
+          style={headerStyle}
+          className={`${column.className ?? ''} ${classNames?.header ?? ''} ${isPinned ? (classNames?.pinnedHeader ?? '') : ''}`}
           onContextMenu={handleContextMenu}
         >
           {/*
@@ -431,56 +436,68 @@ const theme = typeof document !== 'undefined' &&
           <div
             {...(isPinned ? {} : attributes)}
             {...(isPinned ? {} : listeners)}
-            className={`group relative z-10 flex h-full flex-1 touch-none items-center gap-1 truncate overflow-hidden px-2 font-medium ${
-              isPinned ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'
-            }`}
+            style={{
+              position: 'relative',
+              zIndex: 10,
+              display: 'flex',
+              height: '100%',
+              flex: '1 1 0%',
+              touchAction: 'none',
+              alignItems: 'center',
+              gap: 4,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap' as const,
+              paddingLeft: 8,
+              paddingRight: 8,
+              fontWeight: 500,
+              cursor: isPinned ? 'default' : 'grab',
+            }}
             aria-label={
               isPinned
                 ? `${column.key} column (pinned)`
                 : `Drag ${column.key} column`
             }
           >
-            {/*
-             * Drag grip icon — hidden for pinned columns and when hideGripIcon=true.
-             * Fades to full opacity on header hover.
-             */}
             {hideGripIcon || isPinned
               ? null
-              : (gripIcon ?? (
-                  <GripVertical className="h-3 w-3 shrink-0 opacity-35 group-hover:opacity-80" />
+              : (icons?.gripVertical ?? gripIcon ?? (
+                  <span data-bt-grip="" style={{ opacity: 0.35, flexShrink: 0, display: 'flex' }}>
+                    <GripVerticalIcon style={{ width: 12, height: 12 }} />
+                  </span>
                 ))}
 
-            {/*
-             * Column title + sort/filter indicator icons.
-             * `select-none` prevents text selection during drag.
-             */}
             <div
-              className={`flex min-w-0 items-center gap-1 truncate overflow-hidden text-left select-none`}
+              style={{
+                display: 'flex',
+                minWidth: 0,
+                alignItems: 'center',
+                gap: 4,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap' as const,
+                textAlign: 'left',
+                userSelect: 'none',
+              }}
             >
               {column.title}
 
-              {/* Sort ascending indicator */}
               {sortDirection === 'asc' && (
-                <ArrowUpAZ
-                  className="h-3 w-3 shrink-0"
-                  style={{ color: accentColor }}
-                />
+                <span style={{ color: accentColor, flexShrink: 0, display: 'flex' }}>
+                  {icons?.sortAsc ?? <ArrowUpAZIcon style={{ width: 12, height: 12 }} />}
+                </span>
               )}
 
-              {/* Sort descending indicator */}
               {sortDirection === 'desc' && (
-                <ArrowDownAZ
-                  className="h-3 w-3 shrink-0"
-                  style={{ color: accentColor }}
-                />
+                <span style={{ color: accentColor, flexShrink: 0, display: 'flex' }}>
+                  {icons?.sortDesc ?? <ArrowDownAZIcon style={{ width: 12, height: 12 }} />}
+                </span>
               )}
 
-              {/* Active filter indicator — shown when filterValue is non-empty */}
               {filterValue && (
-                <Filter
-                  className="h-2.5 w-2.5 shrink-0"
-                  style={{ color: accentColor }}
-                />
+                <span style={{ color: accentColor, flexShrink: 0, display: 'flex' }}>
+                  {icons?.filter ?? <FilterIcon style={{ width: 10, height: 10 }} />}
+                </span>
               )}
             </div>
           </div>
@@ -492,7 +509,20 @@ const theme = typeof document !== 'undefined' &&
            */}
           {isPinned && (
             <button
-              className="group/unpin relative h-full w-6 shrink-0 cursor-pointer border-0 bg-transparent p-0"
+              style={{
+                position: 'relative',
+                height: '100%',
+                width: 24,
+                flexShrink: 0,
+                cursor: 'pointer',
+                border: 'none',
+                background: 'transparent',
+                padding: 0,
+                color: accentColor || '#1788ff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -500,28 +530,37 @@ const theme = typeof document !== 'undefined' &&
               }}
               aria-label={`Unpin ${column.key} column`}
               title="Unpin column"
-              style={{ color: accentColor || '1788ff' }}
             >
-              <PinOff className="mx-auto h-3 w-3" />
+              {icons?.pinOff ?? <PinOffIcon style={{ width: 12, height: 12 }} />}
             </button>
           )}
 
-          {/*
-           * ── Resize handle (non-pinned columns only) ────────────────────
-           * A 12px-wide invisible hit area on the right edge of the header.
-           * Shows a colored line on hover to indicate the resize target.
-           * Pinned columns skip this — they cannot be resized.
-           */}
           {!isPinned && (
             <button
-              className="group/resize relative h-full w-3 shrink-0 cursor-col-resize border-0 bg-transparent p-0"
+              data-bt-resize=""
+              style={{
+                position: 'relative',
+                height: '100%',
+                width: 12,
+                flexShrink: 0,
+                cursor: 'col-resize',
+                border: 'none',
+                background: 'transparent',
+                padding: 0,
+              }}
               onMouseDown={handleResizeStart}
               aria-label={`Resize ${column.key} column`}
             >
-              {/* Visual resize indicator line — only visible on hover */}
               <div
-                className="absolute top-0 right-0 h-full w-0.5 opacity-0 transition-opacity group-hover/resize:opacity-100"
+                data-bt-resize-line=""
                 style={{
+                  position: 'absolute',
+                  top: 0,
+                  right: 0,
+                  height: '100%',
+                  width: 2,
+                  opacity: 0,
+                  transition: 'opacity 0.15s',
                   backgroundColor: accentColor || '#1788ff',
                 }}
               />
@@ -540,65 +579,108 @@ const theme = typeof document !== 'undefined' &&
           createPortal(
             <div
               ref={menuRef}
-              className="text-xxs fixed z-[9999] min-w-40 rounded-md border py-1 shadow-lg backdrop-blur"
               style={{
+                fontSize: 10,
+                position: 'fixed',
+                zIndex: 9999,
+                minWidth: 160,
+                borderRadius: 6,
+                border: '1px solid #e5e7eb',
+                paddingTop: 4,
+                paddingBottom: 4,
+                boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.1)',
+                backdropFilter: 'blur(12px)',
+                backgroundColor: 'rgba(255, 255, 255, 0.98)',
                 left: `${contextMenu.x}px`,
                 top: `${contextMenu.y}px`,
-                position: 'fixed',
               }}
               role="menu"
             >
-              {/* ── Sort options ─────────────────────────────────────────── */}
               {effectivelySortable && onSort && (
                 <>
                   <button
-                    className={`cusror-pointer flex w-full items-center gap-2 px-3 py-1.5 text-left ${sortDirection === 'asc' ? 'font-semibold' : ''}`}
-                    style={
-                      sortDirection === 'asc'
-                        ? { color: accentColor }
-                        : undefined
-                    }
+                    data-bt-ctx-item=""
+                    style={{
+                      cursor: 'pointer',
+                      display: 'flex',
+                      width: '100%',
+                      alignItems: 'center',
+                      gap: 8,
+                      paddingLeft: 12,
+                      paddingRight: 12,
+                      paddingTop: 6,
+                      paddingBottom: 6,
+                      textAlign: 'left',
+                      background: 'none',
+                      border: 'none',
+                      fontSize: 'inherit',
+                      color: 'inherit',
+                      fontWeight: sortDirection === 'asc' ? 600 : undefined,
+                      ...(sortDirection === 'asc' ? { color: accentColor } : {}),
+                    }}
                     onClick={() => {
                       onSort(column.key, 'asc');
                       setContextMenu(null);
                     }}
                   >
-                    <ArrowUpAZ className="h-3 w-3" />
+                    {icons?.sortAsc ?? <ArrowUpAZIcon style={{ width: 12, height: 12 }} />}
                     Sort Ascending
                   </button>
                   <button
-                    className={`cusror-pointer flex w-full items-center gap-2 px-3 py-1.5 text-left ${sortDirection === 'desc' ? 'font-semibold' : ''}`}
-                    style={
-                      sortDirection === 'desc'
-                        ? { color: accentColor }
-                        : undefined
-                    }
+                    data-bt-ctx-item=""
+                    style={{
+                      cursor: 'pointer',
+                      display: 'flex',
+                      width: '100%',
+                      alignItems: 'center',
+                      gap: 8,
+                      paddingLeft: 12,
+                      paddingRight: 12,
+                      paddingTop: 6,
+                      paddingBottom: 6,
+                      textAlign: 'left',
+                      background: 'none',
+                      border: 'none',
+                      fontSize: 'inherit',
+                      color: 'inherit',
+                      fontWeight: sortDirection === 'desc' ? 600 : undefined,
+                      ...(sortDirection === 'desc' ? { color: accentColor } : {}),
+                    }}
                     onClick={() => {
                       onSort(column.key, 'desc');
                       setContextMenu(null);
                     }}
                   >
-                    <ArrowDownAZ className="h-3 w-3" />
+                    {icons?.sortDesc ?? <ArrowDownAZIcon style={{ width: 12, height: 12 }} />}
                     Sort Descending
                   </button>
-                  <div className="my-1 border-t dark:border-gray-700" />
+                  <div style={{ marginTop: 4, marginBottom: 4, borderTop: '1px solid #e5e7eb' }} />
                 </>
               )}
 
-              {/* ── Filter option ─────────────────────────────────────────── */}
               {effectivelyFilterable && onFilter && (
                 <>
                   {showFilterInput ? (
-                    // Inline text input — pressing Enter applies the filter,
-                    // pressing Escape cancels and returns to the button
-                    <div className="flex items-center gap-1 px-2 py-1.5">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, paddingLeft: 8, paddingRight: 8, paddingTop: 6, paddingBottom: 6 }}>
                       <input
                         ref={filterInputRef}
                         type="text"
                         autoFocus
                         defaultValue={filterValue}
                         placeholder="Filter..."
-                        className="bg-background text-foreground w-full rounded border px-1.5 py-0.5 text-xs outline-none focus:border-blue-400"
+                        style={{
+                          width: '100%',
+                          borderRadius: 4,
+                          border: '1px solid #e5e7eb',
+                          paddingLeft: 6,
+                          paddingRight: 6,
+                          paddingTop: 2,
+                          paddingBottom: 2,
+                          fontSize: 12,
+                          outline: 'none',
+                          background: 'inherit',
+                          color: 'inherit',
+                        }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             onFilter(
@@ -616,39 +698,84 @@ const theme = typeof document !== 'undefined' &&
                     </div>
                   ) : (
                     <button
-                      className="cusror-pointer flex w-full items-center gap-2 px-3 py-1.5 text-left"
+                      data-bt-ctx-item=""
+                      style={{
+                        cursor: 'pointer',
+                        display: 'flex',
+                        width: '100%',
+                        alignItems: 'center',
+                        gap: 8,
+                        paddingLeft: 12,
+                        paddingRight: 12,
+                        paddingTop: 6,
+                        paddingBottom: 6,
+                        textAlign: 'left',
+                        background: 'none',
+                        border: 'none',
+                        fontSize: 'inherit',
+                        color: 'inherit',
+                      }}
                       onClick={() => {
                         setShowFilterInput(true);
                       }}
                     >
-                      <Filter className="h-3 w-3" />
+                      {icons?.filter ?? <FilterIcon style={{ width: 12, height: 12 }} />}
                       {filterValue
                         ? `Filtered: "${filterValue}"`
                         : 'Filter Column'}
                     </button>
                   )}
-                  {/* Clear filter — only shown when a filter is currently active */}
                   {filterValue && (
                     <button
-                      className="cusror-pointer flex w-full items-center gap-2 px-3 py-1.5 text-left text-red-500"
+                      data-bt-ctx-item=""
+                      style={{
+                        cursor: 'pointer',
+                        display: 'flex',
+                        width: '100%',
+                        alignItems: 'center',
+                        gap: 8,
+                        paddingLeft: 12,
+                        paddingRight: 12,
+                        paddingTop: 6,
+                        paddingBottom: 6,
+                        textAlign: 'left',
+                        background: 'none',
+                        border: 'none',
+                        fontSize: 'inherit',
+                        color: '#ef4444',
+                      }}
                       onClick={() => {
                         onClearFilter?.(column.key);
                         setShowFilterInput(false);
                         setContextMenu(null);
                       }}
                     >
-                      <FilterX className="h-3 w-3" />
+                      {icons?.filterClear ?? <FilterXIcon style={{ width: 12, height: 12 }} />}
                       Clear Filter
                     </button>
                   )}
-                  <div className="my-1 border-t dark:border-gray-700" />
+                  <div style={{ marginTop: 4, marginBottom: 4, borderTop: '1px solid #e5e7eb' }} />
                 </>
               )}
 
-              {/* ── Pin options ────────────────────────────────────────────── */}
-              {/* Pin/unpin left */}
               <button
-                className="cusror-pointer flex w-full items-center gap-2 px-3 py-1.5 text-left"
+                data-bt-ctx-item=""
+                style={{
+                  cursor: 'pointer',
+                  display: 'flex',
+                  width: '100%',
+                  alignItems: 'center',
+                  gap: 8,
+                  paddingLeft: 12,
+                  paddingRight: 12,
+                  paddingTop: 6,
+                  paddingBottom: 6,
+                  textAlign: 'left',
+                  background: 'none',
+                  border: 'none',
+                  fontSize: 'inherit',
+                  color: 'inherit',
+                }}
                 onClick={() => {
                   onTogglePin?.(
                     column.key,
@@ -657,17 +784,30 @@ const theme = typeof document !== 'undefined' &&
                   setContextMenu(null);
                 }}
               >
-                {column.pinned === 'left' ? (
-                  <PinOff className="h-3 w-3" />
-                ) : (
-                  <Pin className="h-3 w-3" />
-                )}
+                {column.pinned === 'left'
+                  ? (icons?.pinOff ?? <PinOffIcon style={{ width: 12, height: 12 }} />)
+                  : (icons?.pin ?? <PinIcon style={{ width: 12, height: 12 }} />)}
                 {column.pinned === 'left' ? 'Unpin Left' : 'Pin Left'}
               </button>
 
-              {/* Pin/unpin right */}
               <button
-                className="cusror-pointer flex w-full items-center gap-2 px-3 py-1.5 text-left"
+                data-bt-ctx-item=""
+                style={{
+                  cursor: 'pointer',
+                  display: 'flex',
+                  width: '100%',
+                  alignItems: 'center',
+                  gap: 8,
+                  paddingLeft: 12,
+                  paddingRight: 12,
+                  paddingTop: 6,
+                  paddingBottom: 6,
+                  textAlign: 'left',
+                  background: 'none',
+                  border: 'none',
+                  fontSize: 'inherit',
+                  color: 'inherit',
+                }}
                 onClick={() => {
                   onTogglePin?.(
                     column.key,
@@ -676,51 +816,76 @@ const theme = typeof document !== 'undefined' &&
                   setContextMenu(null);
                 }}
               >
-                {column.pinned === 'right' ? (
-                  <PinOff className="h-3 w-3" />
-                ) : (
-                  <Pin className="h-3 w-3" />
-                )}
+                {column.pinned === 'right'
+                  ? (icons?.pinOff ?? <PinOffIcon style={{ width: 12, height: 12 }} />)
+                  : (icons?.pin ?? <PinIcon style={{ width: 12, height: 12 }} />)}
                 {column.pinned === 'right' ? 'Unpin Right' : 'Pin Right'}
               </button>
 
-              {/* ── Hide column (non-pinned only) ──────────────────────────── */}
               {!isPinned && (
                 <>
-                  <div className="my-1 border-t dark:border-gray-700" />
+                  <div style={{ marginTop: 4, marginBottom: 4, borderTop: '1px solid #e5e7eb' }} />
                   <button
-                    className="cusror-pointer flex w-full items-center gap-2 px-3 py-1.5 text-left"
+                    data-bt-ctx-item=""
+                    style={{
+                      cursor: 'pointer',
+                      display: 'flex',
+                      width: '100%',
+                      alignItems: 'center',
+                      gap: 8,
+                      paddingLeft: 12,
+                      paddingRight: 12,
+                      paddingTop: 6,
+                      paddingBottom: 6,
+                      textAlign: 'left',
+                      background: 'none',
+                      border: 'none',
+                      fontSize: 'inherit',
+                      color: 'inherit',
+                    }}
                     onClick={() => {
                       onToggleHide?.(column.key);
                       setContextMenu(null);
                     }}
                   >
-                    <EyeOff className="h-3 w-3" />
+                    {icons?.eyeOff ?? <EyeOffIcon style={{ width: 12, height: 12 }} />}
                     Hide Column
                   </button>
                 </>
               )}
 
-              {/* ── Custom context menu items from parent ─────────────────── */}
               {customContextMenuItems && customContextMenuItems.length > 0 && (
                 <>
-                  <div className="my-1 border-t dark:border-gray-700" />
+                  <div style={{ marginTop: 4, marginBottom: 4, borderTop: '1px solid #e5e7eb' }} />
                   {customContextMenuItems.map((item) => (
                     <button
                       key={item.key}
+                      data-bt-ctx-item=""
                       disabled={item.disabled}
-                      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left ${
-                        item.disabled
-                          ? 'cursor-not-allowed opacity-50'
-                          : 'cusror-pointer'
-                      } ${item.danger ? 'text-red-500' : ''}`}
+                      style={{
+                        display: 'flex',
+                        width: '100%',
+                        alignItems: 'center',
+                        gap: 8,
+                        paddingLeft: 12,
+                        paddingRight: 12,
+                        paddingTop: 6,
+                        paddingBottom: 6,
+                        textAlign: 'left',
+                        background: 'none',
+                        border: 'none',
+                        fontSize: 'inherit',
+                        cursor: item.disabled ? 'not-allowed' : 'pointer',
+                        opacity: item.disabled ? 0.5 : 1,
+                        color: item.danger ? '#ef4444' : 'inherit',
+                      }}
                       onClick={() => {
                         item.onClick(column.key);
                         setContextMenu(null);
                       }}
                     >
                       {item.icon && (
-                        <span className="flex h-3 w-3 items-center justify-center">
+                        <span style={{ display: 'flex', width: 12, height: 12, alignItems: 'center', justifyContent: 'center' }}>
                           {item.icon}
                         </span>
                       )}

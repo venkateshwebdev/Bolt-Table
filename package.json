@@ -3,13 +3,14 @@
   "version": "0.1.0",
   "description": "Virtualized React table with column drag & drop, pinning, resizing, sorting, filtering, and pagination.",
   "license": "MIT",
-  "main": "./dist/index.cjs",
-  "module": "./dist/index.js",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
     }
   },
   "files": [
@@ -25,7 +26,6 @@
     "@dnd-kit/core": ">=6",
     "@dnd-kit/sortable": ">=7",
     "@tanstack/react-virtual": "^3.13.22",
-    "lucide-react": ">=0.300.0",
     "react": ">=18",
     "react-dom": ">=18"
   },

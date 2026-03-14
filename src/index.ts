@@ -11,3 +11,4 @@ export type {
   SortDirection,
   DataRecord,
 } from './types';
+export type { BoltTableIcons } from './icons';

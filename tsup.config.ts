@@ -12,6 +12,5 @@ export default defineConfig({
     '@tanstack/react-virtual',
     '@dnd-kit/core',
     '@dnd-kit/sortable',
-    'lucide-react',
   ],
 });

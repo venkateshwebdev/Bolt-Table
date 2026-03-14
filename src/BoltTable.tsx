@@ -16,14 +16,6 @@ import {
   SortableContext,
 } from '@dnd-kit/sortable';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import {
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
-  GripVertical,
-} from 'lucide-react';
 import React, {
   CSSProperties,
   useCallback,
@@ -33,6 +25,15 @@ import React, {
 } from 'react';
 
 import DraggableHeader from './DraggableHeader';
+import {
+  type BoltTableIcons,
+  ChevronDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ChevronsLeftIcon,
+  ChevronsRightIcon,
+  GripVerticalIcon,
+} from './icons';
 import ResizeOverlay, { type ResizeOverlayHandle } from './ResizeOverlay';
 import TableBody from './TableBody';
 import type {
@@ -238,13 +239,29 @@ interface BoltTableProps<T extends DataRecord = DataRecord> {
 
   /**
    * A custom React node to use as the drag grip icon in column headers.
-   * When omitted, the default `GripVertical` icon from lucide-react is used.
+   * When omitted, the default GripVertical SVG icon is used.
    * Ignored when `hideGripIcon` is `true`.
    *
+   * @deprecated Use `icons.gripVertical` instead. This prop is kept for backward compatibility.
+   *
    * @example
-   * gripIcon={<DragHandleIcon className="h-3 w-3" />}
+   * gripIcon={<DragHandleIcon style={{ width: 12, height: 12 }} />}
    */
   readonly gripIcon?: React.ReactNode;
+
+  /**
+   * Custom icon overrides for the table's built-in icons.
+   * Pass any subset of icons to replace the defaults. Unspecified icons use
+   * the built-in SVG icons. Each icon should be a pre-sized React node.
+   *
+   * @example
+   * icons={{
+   *   gripVertical: <MyGripIcon size={12} />,
+   *   sortAsc: <MySortUpIcon size={12} />,
+   *   chevronsLeft: <MyFirstPageIcon size={12} />,
+   * }}
+   */
+  readonly icons?: BoltTableIcons;
 
   /**
    * When `true`, the drag grip icon is hidden from all column headers.
@@ -752,6 +769,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   styles = {},
   gripIcon,
   hideGripIcon,
+  icons,
   pagination,
   onPaginationChange,
   onColumnResize,
@@ -950,7 +968,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
           });
         }
 
-        // Default expand button: ChevronRight (collapsed) / ChevronDown (expanded)
         return (
           <button
             onClick={(e) => {
@@ -969,11 +986,9 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
               color: accentColor,
             }}
           >
-            {isExpanded ? (
-              <ChevronDown style={{ width: 14, height: 14 }} />
-            ) : (
-              <ChevronRight style={{ width: 14, height: 14 }} />
-            )}
+            {isExpanded
+              ? (icons?.chevronDown ?? <ChevronDownIcon style={{ width: 14, height: 14 }} />)
+              : (icons?.chevronRight ?? <ChevronRightIcon style={{ width: 14, height: 14 }} />)}
           </button>
         );
       },
@@ -1759,7 +1774,13 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
       onDragEnd={handleDragEnd}
     >
       <div
-        className={`flex ${autoHeight ? 'max-h-full' : 'h-full'} w-full flex-col ${className}`}
+        className={className}
+        style={{
+          display: 'flex',
+          width: '100%',
+          flexDirection: 'column',
+          ...(autoHeight ? { maxHeight: '100%' } : { height: '100%' }),
+        }}
       >
         {/*
          * ── Injected CSS for hover/selection ──────────────────────────────
@@ -1771,14 +1792,27 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
          * [data-row-key][data-selected] > div → selected background
          */}
         <style>{`
+          @keyframes bt-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+          }
           [data-row-key][data-hover] > div {
-            background-color: ${styles.rowHover?.backgroundColor ?? `hsl(var(--muted) / 0.5)`};
+            background-color: ${styles.rowHover?.backgroundColor ?? 'rgba(0, 0, 0, 0.04)'};
           }
           [data-row-key][data-selected] > div {
             background-color: ${styles.rowSelected?.backgroundColor ?? `${accentColor}15`};
           }
           [data-row-key][data-selected][data-hover] > div {
             background-color: ${styles.rowSelected?.backgroundColor ?? `${accentColor}25`};
+          }
+          [data-bt-header]:hover [data-bt-grip] {
+            opacity: 0.8 !important;
+          }
+          [data-bt-resize]:hover [data-bt-resize-line] {
+            opacity: 1 !important;
+          }
+          [data-bt-ctx-item]:not(:disabled):hover {
+            background-color: rgba(0, 0, 0, 0.06);
           }
         `}</style>
 
@@ -1791,17 +1825,17 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
          *   flex-1 fills remaining parent height (parent must have a height)
          */}
         <div
-          className={`relative ${autoHeight ? '' : 'flex-1'}`}
-          style={
-            autoHeight
+          style={{
+            position: 'relative',
+            ...(autoHeight
               ? {
                   height: `${clampedAutoHeight}px`,
                   maxHeight: `${clampedAutoHeight}px`,
                   flexShrink: 1,
                   flexGrow: 0,
                 }
-              : undefined
-          }
+              : { flex: '1 1 0%' }),
+          }}
         >
           {layoutLoading ? (
             /*
@@ -1811,8 +1845,12 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
              * Used for initial page load when column widths are not yet known.
              */
             <div
-              className="absolute inset-0 overflow-auto"
-              style={{ contain: 'layout paint' }}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                overflow: 'auto',
+                contain: 'layout paint',
+              }}
             >
               <div
                 style={{
@@ -1832,12 +1870,20 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                   return (
                     <div
                       key={column.key}
-                      className={`flex h-9 items-center truncate border-t border-b ${
-                        isPinned
-                          ? `bg-background backdrop-blur ${classNames.pinnedHeader ?? ''}`
-                          : `bg-muted/40 backdrop-blur ${classNames.header ?? ''}`
-                      }`}
+                      className={isPinned ? (classNames.pinnedHeader ?? '') : (classNames.header ?? '')}
                       style={{
+                        display: 'flex',
+                        height: 36,
+                        alignItems: 'center',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap' as const,
+                        borderTop: '1px solid #e5e7eb',
+                        borderBottom: '1px solid #e5e7eb',
+                        backdropFilter: 'blur(8px)',
+                        backgroundColor: isPinned
+                          ? 'rgba(255, 255, 255, 0.95)'
+                          : 'rgba(248, 250, 252, 0.4)',
                         position: 'sticky',
                         top: 0,
                         zIndex: isPinned ? 13 : 10,
@@ -1877,15 +1923,15 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                         return (
                           <div
                             key={column.key}
-                            className={`flex items-center border-b ${
-                              isPinned
-                                ? `bg-background ${classNames.pinnedCell ?? ''}`
-                                : ''
-                            }`}
+                            className={isPinned ? (classNames.pinnedCell ?? '') : ''}
                             style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              borderBottom: '1px solid #e5e7eb',
                               ...(isPinned
                                 ? {
                                     position: 'sticky' as const,
+                                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
                                     [column.pinned as string]: offset ?? 0,
                                     zIndex: 5,
                                     ...styles.pinnedCell,
@@ -1897,11 +1943,12 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                             }}
                           >
                             <div
-                              className="bg-muted-foreground/15 animate-pulse rounded"
                               style={{
+                                backgroundColor: 'rgba(100, 116, 139, 0.15)',
+                                animation: 'bt-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                                borderRadius: isSystem ? 3 : 4,
                                 height: isSystem ? 16 : 14,
                                 width: isSystem ? 16 : `${widthPercent}%`,
-                                borderRadius: isSystem ? 3 : 4,
                                 animationDelay: `${(rowIndex * 7 + colIndex) * 50}ms`,
                               }}
                             />
@@ -1922,8 +1969,12 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
              */
             <div
               ref={tableAreaCallbackRef}
-              className="absolute inset-0 overflow-auto"
-              style={{ contain: 'layout paint' }}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                overflow: 'auto',
+                contain: 'layout paint',
+              }}
             >
               {/* Resize overlay — positioned inside scroll container so it scrolls with content */}
               <ResizeOverlay ref={resizeOverlayRef} accentColor={accentColor} />
@@ -1940,11 +1991,11 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                 style={{
                   display: 'grid',
                   gridTemplateColumns,
-                  gridTemplateRows: '36px 1fr',
+                  gridTemplateRows: isEmpty ? '36px 1fr' : '36px auto',
                   minWidth: `${totalTableWidth}px`,
-                  height: '100%',
                   width: '100%',
                   position: 'relative',
+                  ...(isEmpty ? { height: '100%' } : {}),
                 }}
               >
                 {/* ── Column headers ─────────────────────────────────── */}
@@ -1958,8 +2009,19 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                       return (
                         <div
                           key="__select__"
-                          className={`bg-muted/40 sticky flex h-9 items-center justify-center truncate border-t border-b backdrop-blur ${classNames.header ?? ''} ${classNames.pinnedHeader ?? ''} `}
+                          className={`${classNames.header ?? ''} ${classNames.pinnedHeader ?? ''}`}
                           style={{
+                            display: 'flex',
+                            height: 36,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap' as const,
+                            borderTop: '1px solid #e5e7eb',
+                            borderBottom: '1px solid #e5e7eb',
+                            backdropFilter: 'blur(8px)',
+                            backgroundColor: 'rgba(248, 250, 252, 0.4)',
                             position: 'sticky',
                             left: columnOffsets.get('__select__') ?? 0,
                             top: 0,
@@ -2007,21 +2069,30 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                                     });
                                   }
                                 }}
-                                className="cursor-pointer"
-                                style={{ accentColor }}
+                                style={{ cursor: 'pointer', accentColor }}
                               />
                             )}
                         </div>
                       );
                     }
 
-                    // Expand column header — empty cell (no content needed)
                     if (column.key === '__expand__') {
                       return (
                         <div
                           key="__expand__"
-                          className={`bg-muted/40 sticky flex h-9 items-center justify-center truncate border-t border-b backdrop-blur ${classNames.header ?? ''} ${classNames.pinnedHeader ?? ''}`}
+                          className={`${classNames.header ?? ''} ${classNames.pinnedHeader ?? ''}`}
                           style={{
+                            display: 'flex',
+                            height: 36,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap' as const,
+                            borderTop: '1px solid #e5e7eb',
+                            borderBottom: '1px solid #e5e7eb',
+                            backdropFilter: 'blur(8px)',
+                            backgroundColor: 'rgba(248, 250, 252, 0.4)',
                             position: 'sticky',
                             left: columnOffsets.get('__expand__') ?? 0,
                             top: 0,
@@ -2046,6 +2117,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                         classNames={classNames}
                         gripIcon={gripIcon}
                         hideGripIcon={hideGripIcon}
+                        icons={icons}
                         stickyOffset={columnOffsets.get(column.key)}
                         onTogglePin={handleTogglePin}
                         onToggleHide={handleToggleHide}
@@ -2076,8 +2148,11 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                    * with the grid content when there are many columns.
                    */
                   <div
-                    className="col-span-full"
-                    style={{ height: '100%', position: 'relative' }}
+                    style={{
+                      gridColumn: '1 / -1',
+                      height: '100%',
+                      position: 'relative',
+                    }}
                   >
                     <div
                       style={{
@@ -2092,8 +2167,18 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                       }}
                     >
                       {emptyRenderer ?? (
-                        <div className="text-muted-foreground flex flex-col items-center gap-2 py-8">
-                          <span className="text-sm">No data</span>
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            gap: 8,
+                            paddingTop: 32,
+                            paddingBottom: 32,
+                            color: '#6b7280',
+                          }}
+                        >
+                          <span style={{ fontSize: 14 }}>No data</span>
                         </div>
                       )}
                     </div>
@@ -2147,49 +2232,89 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
          */}
         {pagination !== false && (
           <div
-            className="flex h-9 items-center justify-between border-t px-3 text-xs backdrop-blur"
             style={{
-              backgroundColor: 'hsl(var(--background)/0.4)',
-              gap: '12px',
+              display: 'flex',
+              height: 36,
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              borderTop: '1px solid #e5e7eb',
+              paddingLeft: 12,
+              paddingRight: 12,
+              fontSize: 12,
+              backdropFilter: 'blur(8px)',
+              backgroundColor: 'rgba(255, 255, 255, 0.4)',
+              gap: 12,
             }}
           >
-            {/* Left section: "X-Y of Z" range indicator */}
-            <div className="flex flex-1 items-center">
+            <div style={{ display: 'flex', flex: '1 1 0%', alignItems: 'center' }}>
               {(() => {
                 const rangeStart =
                   total > 0 ? (currentPage - 1) * pageSize + 1 : 0;
                 const rangeEnd = Math.min(currentPage * pageSize, total);
                 return pagination?.showTotal ? (
-                  <span className="text-muted-foreground text-xs">
+                  <span style={{ color: '#6b7280', fontSize: 12 }}>
                     Showing{' '}
                     {pagination.showTotal(total, [rangeStart, rangeEnd])} of{' '}
                     {total} items
                   </span>
                 ) : (
-                  <span className="text-muted-foreground text-xs">
+                  <span style={{ color: '#6b7280', fontSize: 12 }}>
                     {rangeStart}–{rangeEnd} of {total}
                   </span>
                 );
               })()}
             </div>
 
-            {/* Center section: page number buttons */}
-            <div className="flex flex-1 items-center justify-center gap-1">
+            <div
+              style={{
+                display: 'flex',
+                flex: '1 1 0%',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 4,
+              }}
+            >
               <button
                 onClick={() => handlePageChange(1)}
                 disabled={currentPage === 1}
-                className="inline-flex h-6 w-6 cursor-pointer items-center justify-center text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-30"
+                style={{
+                  display: 'inline-flex',
+                  height: 24,
+                  width: 24,
+                  cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 12,
+                  opacity: currentPage === 1 ? 0.3 : 1,
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                  color: 'inherit',
+                }}
                 title="First page"
               >
-                <ChevronsLeft className="h-3 w-3" />
+                {icons?.chevronsLeft ?? <ChevronsLeftIcon style={{ width: 12, height: 12 }} />}
               </button>
               <button
                 onClick={() => handlePageChange(currentPage - 1)}
                 disabled={currentPage === 1}
-                className="inline-flex h-6 w-6 cursor-pointer items-center justify-center text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-30"
+                style={{
+                  display: 'inline-flex',
+                  height: 24,
+                  width: 24,
+                  cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 12,
+                  opacity: currentPage === 1 ? 0.3 : 1,
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                  color: 'inherit',
+                }}
                 title="Previous page"
               >
-                <ChevronLeft className="h-3 w-3" />
+                {icons?.chevronLeft ?? <ChevronLeftIcon style={{ width: 12, height: 12 }} />}
               </button>
 
               {getPageNumbers().map((page) => {
@@ -2197,7 +2322,13 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                   return (
                     <span
                       key={page}
-                      className="text-muted-foreground px-1 text-xs select-none"
+                      style={{
+                        color: '#6b7280',
+                        paddingLeft: 4,
+                        paddingRight: 4,
+                        fontSize: 12,
+                        userSelect: 'none',
+                      }}
                     >
                       ...
                     </span>
@@ -2207,10 +2338,21 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                   <button
                     key={page}
                     style={{
+                      display: 'inline-flex',
+                      height: 24,
+                      minWidth: 24,
+                      cursor: 'pointer',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRadius: 4,
+                      paddingLeft: 6,
+                      paddingRight: 6,
+                      fontSize: 12,
                       color: page === currentPage ? accentColor : undefined,
+                      background: 'none',
+                      border: 'none',
                     }}
                     onClick={() => handlePageChange(page as number)}
-                    className="inline-flex h-6 min-w-6 cursor-pointer items-center justify-center rounded px-1.5 text-xs transition-colors"
                   >
                     {page}
                   </button>
@@ -2220,28 +2362,72 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
               <button
                 onClick={() => handlePageChange(currentPage + 1)}
                 disabled={currentPage === totalPages}
-                className="inline-flex h-6 w-6 cursor-pointer items-center justify-center text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-30"
+                style={{
+                  display: 'inline-flex',
+                  height: 24,
+                  width: 24,
+                  cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 12,
+                  opacity: currentPage === totalPages ? 0.3 : 1,
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                  color: 'inherit',
+                }}
                 title="Next page"
               >
-                <ChevronRight className="h-3 w-3" />
+                {icons?.chevronRight ?? <ChevronRightIcon style={{ width: 12, height: 12 }} />}
               </button>
               <button
                 onClick={() => handlePageChange(totalPages)}
                 disabled={currentPage === totalPages}
-                className="inline-flex h-6 w-6 cursor-pointer items-center justify-center text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-30"
+                style={{
+                  display: 'inline-flex',
+                  height: 24,
+                  width: 24,
+                  cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 12,
+                  opacity: currentPage === totalPages ? 0.3 : 1,
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                  color: 'inherit',
+                }}
                 title="Last page"
               >
-                <ChevronsRight className="h-3 w-3" />
+                {icons?.chevronsRight ?? <ChevronsRightIcon style={{ width: 12, height: 12 }} />}
               </button>
             </div>
 
-            {/* Right section: rows-per-page selector */}
-            <div className="flex flex-1 items-center justify-end gap-2">
+            <div
+              style={{
+                display: 'flex',
+                flex: '1 1 0%',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                gap: 8,
+              }}
+            >
               <select
                 value={pageSize}
                 onChange={(e) => handlePageSizeChange(Number(e.target.value))}
-                className="bg-background text-foreground hover:border-primary cursor-pointer rounded border px-1.5 py-0.5 text-xs"
-                style={{ height: '24px' }}
+                style={{
+                  cursor: 'pointer',
+                  borderRadius: 4,
+                  border: '1px solid #e5e7eb',
+                  paddingLeft: 6,
+                  paddingRight: 6,
+                  paddingTop: 2,
+                  paddingBottom: 2,
+                  fontSize: 12,
+                  height: 24,
+                  background: 'inherit',
+                  color: 'inherit',
+                }}
               >
                 {[10, 15, 20, 25, 50, 100].map((size) => (
                   <option key={size} value={size}>
@@ -2262,17 +2448,53 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
       <DragOverlay>
         {activeColumn ? (
           <div
-            className={`flex h-9 items-center truncate overflow-hidden border border-dashed shadow-md backdrop-blur ${classNames.header ?? ''} ${classNames.dragHeader ?? ''}`}
+            className={`${classNames.header ?? ''} ${classNames.dragHeader ?? ''}`}
             style={{
+              display: 'flex',
+              height: 36,
+              alignItems: 'center',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap' as const,
+              border: '1px dashed #e5e7eb',
+              boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1)',
+              backdropFilter: 'blur(8px)',
               width: `${activeColumn.width ?? 150}px`,
               cursor: 'grabbing',
               ...styles.header,
               ...styles.dragHeader,
             }}
           >
-            <div className="relative z-10 flex h-full flex-1 items-center gap-1 truncate overflow-hidden px-2 font-medium">
-              <GripVertical className="h-3 w-3 shrink-0" />
-              <div className="min-w-0 truncate overflow-hidden text-left text-ellipsis whitespace-nowrap select-none">
+            <div
+              style={{
+                position: 'relative',
+                zIndex: 10,
+                display: 'flex',
+                height: '100%',
+                flex: '1 1 0%',
+                alignItems: 'center',
+                gap: 4,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap' as const,
+                paddingLeft: 8,
+                paddingRight: 8,
+                fontWeight: 500,
+              }}
+            >
+              {icons?.gripVertical ?? gripIcon ?? (
+                <GripVerticalIcon style={{ width: 12, height: 12, flexShrink: 0 }} />
+              )}
+              <div
+                style={{
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap' as const,
+                  textAlign: 'left',
+                  userSelect: 'none',
+                }}
+              >
                 {typeof activeColumn.title === 'string'
                   ? activeColumn.title
                   : activeColumn.key}
