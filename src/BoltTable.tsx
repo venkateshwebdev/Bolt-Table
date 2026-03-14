@@ -1870,7 +1870,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
             50% { opacity: 0.5; }
           }
           [data-row-key][data-hover] > div {
-            background-color: ${styles.rowHover?.backgroundColor ?? 'rgba(0, 0, 0, 0.04)'};
+            background-color: ${styles.rowHover?.backgroundColor ?? 'rgba(128, 128, 128, 0.1)'};
           }
           [data-row-key][data-selected] > div {
             background-color: ${styles.rowSelected?.backgroundColor ?? `${accentColor}15`};
@@ -1885,7 +1885,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
             opacity: 1 !important;
           }
           [data-bt-ctx-item]:not(:disabled):hover {
-            background-color: rgba(0, 0, 0, 0.06);
+            background-color: rgba(128, 128, 128, 0.15);
           }
           [data-column-key][data-dragging] {
             opacity: 0.3 !important;
@@ -2089,7 +2089,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap' as const,
                             borderBottom: '1px solid rgba(128,128,128,0.2)',
-                            backgroundColor: 'Canvas',
+                            backgroundColor: (styles as any)?.pinnedBg ?? 'color-mix(in srgb, currentColor 4%, Canvas)',
                             position: 'sticky',
                             left: columnOffsets.get('__select__') ?? 0,
                             top: 0,
@@ -2158,7 +2158,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap' as const,
                             borderBottom: '1px solid rgba(128,128,128,0.2)',
-                            backgroundColor: 'Canvas',
+                            backgroundColor: (styles as any)?.pinnedBg ?? 'color-mix(in srgb, currentColor 4%, Canvas)',
                             position: 'sticky',
                             left: columnOffsets.get('__expand__') ?? 0,
                             top: 0,
@@ -2241,7 +2241,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                             gap: 8,
                             paddingTop: 32,
                             paddingBottom: 32,
-                            color: '#6b7280',
+                            color: 'GrayText',
                           }}
                         >
                           <span style={{ fontSize: 14 }}>No data</span>
@@ -2318,13 +2318,13 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                   total > 0 ? (currentPage - 1) * pageSize + 1 : 0;
                 const rangeEnd = Math.min(currentPage * pageSize, total);
                 return pagination?.showTotal ? (
-                  <span style={{ color: '#6b7280', fontSize: 12 }}>
+                  <span style={{ color: 'GrayText', fontSize: 12 }}>
                     Showing{' '}
                     {pagination.showTotal(total, [rangeStart, rangeEnd])} of{' '}
                     {total} items
                   </span>
                 ) : (
-                  <span style={{ color: '#6b7280', fontSize: 12 }}>
+                  <span style={{ color: 'GrayText', fontSize: 12 }}>
                     {rangeStart}–{rangeEnd} of {total}
                   </span>
                 );
@@ -2389,7 +2389,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                     <span
                       key={page}
                       style={{
-                        color: '#6b7280',
+                        color: 'GrayText',
                         paddingLeft: 4,
                         paddingRight: 4,
                         fontSize: 12,

@@ -358,7 +358,7 @@ const DraggableHeader = React.memo(
         : {}),
       ...(isPinned
         ? {
-            backgroundColor: (styles as any)?.pinnedBg ?? 'Canvas',
+            backgroundColor: (styles as any)?.pinnedBg ?? 'color-mix(in srgb, currentColor 4%, Canvas)',
             ...styles?.pinnedHeader,
           }
         : {}),
@@ -367,7 +367,7 @@ const DraggableHeader = React.memo(
       backgroundColor:
         ((styles as any)?.pinnedBg && isPinned)
           ? (styles as any).pinnedBg
-          : (isPinned ? 'Canvas' : 'rgba(128,128,128,0.06)'),
+          : (isPinned ? 'color-mix(in srgb, currentColor 4%, Canvas)' : 'rgba(128,128,128,0.06)'),
       display: 'flex',
       height: 36,
       alignItems: 'center',
