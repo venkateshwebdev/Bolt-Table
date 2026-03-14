@@ -1,6 +1,6 @@
 {
   "name": "bolt-table",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Virtualized React table with column drag & drop, pinning, resizing, sorting, filtering, and pagination.",
   "license": "MIT",
   "main": "./dist/index.js",
