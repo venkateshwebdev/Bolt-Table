@@ -2089,7 +2089,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap' as const,
                             borderBottom: '1px solid rgba(128,128,128,0.2)',
-                            backgroundColor: (styles as any)?.pinnedBg ?? 'color-mix(in srgb, currentColor 4%, Canvas)',
+                            backgroundColor: (styles as any)?.pinnedBg,
                             position: 'sticky',
                             left: columnOffsets.get('__select__') ?? 0,
                             top: 0,
