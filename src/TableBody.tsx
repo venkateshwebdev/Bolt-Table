@@ -321,10 +321,11 @@ const Cell = React.memo(
             display: 'flex',
             alignItems: 'center',
             overflow: 'hidden',
-            borderBottom: '1px solid #e5e7eb',
+            borderBottom: '1px solid rgba(128,128,128,0.2)',
             paddingLeft: 8,
             paddingRight: 8,
             height: '100%',
+            boxSizing: 'border-box',
             ...column.style,
             ...(isPinned ? styles?.pinnedCell : undefined),
           }}
@@ -394,7 +395,7 @@ const Cell = React.memo(
             display: 'flex',
             alignItems: 'center',
             overflow: 'hidden',
-            borderBottom: '1px solid #e5e7eb',
+            borderBottom: '1px solid rgba(128,128,128,0.2)',
             paddingLeft: 8,
             paddingRight: 8,
             justifyContent:
@@ -402,6 +403,7 @@ const Cell = React.memo(
                 ? 'center'
                 : undefined,
             height: '100%',
+            boxSizing: 'border-box',
             ...column.style,
             ...(isPinned ? styles?.pinnedCell : undefined),
           }}
@@ -429,7 +431,7 @@ const Cell = React.memo(
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap' as const,
-          borderBottom: '1px solid #e5e7eb',
+          borderBottom: '1px solid rgba(128,128,128,0.2)',
           paddingLeft: 8,
           paddingRight: 8,
           justifyContent:
@@ -437,6 +439,7 @@ const Cell = React.memo(
               ? 'center'
               : undefined,
           height: '100%',
+          boxSizing: 'border-box',
           ...column.style,
           ...(isPinned ? styles?.pinnedCell : undefined),
         }}
@@ -575,6 +578,8 @@ const TableBody: React.FC<TableBodyProps> = ({
 }) => {
   const virtualItems = rowVirtualizer.getVirtualItems();
   const totalSize = rowVirtualizer.getTotalSize();
+  const selectedKeySet = useMemo(() => new Set(normalizedSelectedKeys), [normalizedSelectedKeys]);
+
   /**
    * Pre-computed styles for each column's spacer div.
    * Memoized so column styles only recompute when columns, offsets,
@@ -614,8 +619,7 @@ const TableBody: React.FC<TableBodyProps> = ({
         style.right = `${stickyOffset}px`;
 
       if (isPinned) {
-        style.backdropFilter = 'blur(14px)';
-        style.backgroundColor = (styles as any)?.pinnedBg ?? 'rgba(255, 255, 255, 0.95)';
+        style.backgroundColor = (styles as any)?.pinnedBg ?? 'Canvas';
         if (styles?.pinnedCell) Object.assign(style, styles.pinnedCell);
       }
 
@@ -638,19 +642,14 @@ const TableBody: React.FC<TableBodyProps> = ({
         return (
           <div
             key={`spacer-${colStyle.key}`}
-            style={{
-              ...colStyle.style,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap' as const,
-            }}
+            style={colStyle.style}
           >
             {virtualItems.map((virtualRow: VirtualItem) => {
               const row = data[virtualRow.index];
               const rowKey = getRowKey
                 ? getRowKey(row, virtualRow.index)
                 : String(virtualRow.index);
-              const isSelected = normalizedSelectedKeys.includes(rowKey);
+              const isSelected = selectedKeySet.has(rowKey);
               const isExpanded = resolvedExpandedKeys?.has(rowKey) ?? false;
               const cellValue = row[col.dataIndex];
               // Rows with shimmer keys or when isLoading=true render as skeletons
@@ -677,18 +676,12 @@ const TableBody: React.FC<TableBodyProps> = ({
                     left: 0,
                     right: 0,
                     height: `${virtualRow.size}px`,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap' as const,
                   }}
                 >
                   <div
                     style={{
                       height: `${rowHeight}px`,
                       position: 'relative',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap' as const,
                     }}
                   >
                     <Cell
@@ -767,8 +760,8 @@ const TableBody: React.FC<TableBodyProps> = ({
                       : '100%',
                   overflow: 'auto',
                   pointerEvents: 'auto',
-                  borderBottom: '1px solid #e5e7eb',
-                  backgroundColor: 'rgba(248, 250, 252, 0.4)',
+                  borderBottom: '1px solid rgba(128,128,128,0.2)',
+                  backgroundColor: 'rgba(128,128,128,0.06)',
                   padding: 20,
                   ...(maxExpandedRowHeight
                     ? { maxHeight: `${maxExpandedRowHeight}px` }

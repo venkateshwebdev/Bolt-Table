@@ -10,7 +10,5 @@ export default defineConfig({
     'react',
     'react-dom',
     '@tanstack/react-virtual',
-    '@dnd-kit/core',
-    '@dnd-kit/sortable',
   ],
 });

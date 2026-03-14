@@ -266,7 +266,7 @@ export interface ColumnContextMenuItem {
 
   /**
    * Optional icon shown to the left of the label.
-   * Recommended size: 12–14px (e.g. a lucide-react icon at h-3 w-3).
+   * Recommended size: 12–14px .
    *
    * @example
    * icon: <CopyIcon className="h-3 w-3" />

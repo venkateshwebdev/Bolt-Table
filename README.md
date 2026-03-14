@@ -1,6 +1,8 @@
 # bolt-table
 
-A high-performance, fully-featured React table component built on [TanStack Virtual](https://tanstack.com/virtual) and [@dnd-kit](https://dndkit.com). Only the rows visible in the viewport are ever in the DOM — making it fast for datasets of any size.
+A high-performance, zero-dependency\* React table component built on [TanStack Virtual](https://tanstack.com/virtual). Only the rows visible in the viewport are ever in the DOM — making it fast for datasets of any size.
+
+\*Only peer dependency is `@tanstack/react-virtual` (+ React). No Tailwind, no CSS framework, no icon library required.
 
 [![npm version](https://img.shields.io/npm/v/bolt-table)](https://www.npmjs.com/package/bolt-table)
 [![license](https://img.shields.io/npm/l/bolt-table)](./LICENSE)
@@ -10,7 +12,7 @@ A high-performance, fully-featured React table component built on [TanStack Virt
 ## Features
 
 - **Row virtualization** — only visible rows are rendered, powered by TanStack Virtual
-- **Drag to reorder columns** — grab any header and drag it to a new position
+- **Drag to reorder columns** — custom zero-dependency drag-and-drop (no @dnd-kit needed)
 - **Column pinning** — pin columns to the left or right edge via right-click
 - **Column resizing** — drag the right edge of any header to resize
 - **Column hiding** — hide/show columns via the right-click context menu
@@ -24,23 +26,18 @@ A high-performance, fully-featured React table component built on [TanStack Virt
 - **Empty state** — custom renderer or default "No data" message
 - **Auto height** — table shrinks/grows to fit rows, capped at 10 rows by default
 - **Right-click context menu** — sort, filter, pin, hide, plus custom items
-- **Dark mode** — works out of the box with CSS variables
+- **Theme-agnostic** — works in light and dark mode out of the box, no CSS variables needed
+- **Custom icons** — override any built-in icon via the `icons` prop
 
 ---
 
 ## Installation
 
 ```bash
-npm install bolt-table
+npm install bolt-table @tanstack/react-virtual
 ```
 
-### Peer dependencies
-
-These must be installed separately in your project:
-
-```bash
-npm install @tanstack/react-virtual @dnd-kit/core @dnd-kit/sortable lucide-react
-```
+That's it. No other peer dependencies.
 
 ---
 
@@ -83,7 +80,7 @@ export default function App() {
 
 ## Next.js (App Router)
 
-BoltTable uses browser APIs and must be wrapped in a client boundary. Remove the `'use client'` directive from the component files and wrap usage instead:
+BoltTable uses browser APIs and must be wrapped in a client boundary:
 
 ```tsx
 'use client';
@@ -94,9 +91,27 @@ import { BoltTable } from 'bolt-table';
 
 ## Styling
 
-BoltTable uses [Tailwind CSS](https://tailwindcss.com) utility classes and [Shadcn/ui](https://ui.shadcn.com) CSS variables (`--muted`, `--background`, `--border`, etc.).
+BoltTable uses **inline CSS styles** for all defaults — no Tailwind, no CSS variables, no external stylesheets required. It works out of the box in any React project, light or dark mode.
 
-Make sure your project has Tailwind configured and the Shadcn CSS variables defined in your global stylesheet. If you use a different design system, you can override styles via the `styles` and `classNames` props.
+You can customize everything via the `styles` and `classNames` props. If your project uses Tailwind, you can pass Tailwind classes through `classNames` and they'll be applied on top of the inline defaults.
+
+### Custom icons
+
+All built-in icons are inline SVGs. Override any icon via the `icons` prop:
+
+```tsx
+import type { BoltTableIcons } from 'bolt-table';
+
+<BoltTable
+  icons={{
+    gripVertical: <MyGripIcon size={12} />,
+    sortAsc: <MySortUpIcon size={12} />,
+    chevronsLeft: <MyFirstPageIcon size={12} />,
+  }}
+/>
+```
+
+Available icon keys: `gripVertical`, `sortAsc`, `sortDesc`, `filter`, `filterClear`, `pin`, `pinOff`, `eyeOff`, `chevronDown`, `chevronLeft`, `chevronRight`, `chevronsLeft`, `chevronsRight`.
 
 ---
 
@@ -116,7 +131,8 @@ Make sure your project has Tailwind configured and the Shadcn CSS variables defi
 | `className` | `string` | `''` | Class name for the outer wrapper |
 | `classNames` | `ClassNamesTypes` | `{}` | Granular class overrides per table region |
 | `styles` | `StylesTypes` | `{}` | Inline style overrides per table region |
-| `gripIcon` | `ReactNode` | — | Custom drag grip icon (defaults to `GripVertical`) |
+| `icons` | `BoltTableIcons` | — | Custom icon overrides for built-in SVG icons |
+| `gripIcon` | `ReactNode` | — | Custom drag grip icon (deprecated, use `icons.gripVertical`) |
 | `hideGripIcon` | `boolean` | `false` | Hide the drag grip icon from all headers |
 | `pagination` | `PaginationType \| false` | — | Pagination config, or `false` to disable |
 | `onPaginationChange` | `(page, pageSize) => void` | — | Called when page or page size changes |
@@ -172,7 +188,6 @@ const columns: ColumnType<User>[] = [
     dataIndex: 'name',
     title: 'Name',
     sortable: true,
-    // Optional custom comparator:
     sorter: (a, b) => a.name.localeCompare(b.name),
   },
   {
@@ -180,7 +195,6 @@ const columns: ColumnType<User>[] = [
     dataIndex: 'age',
     title: 'Age',
     sortable: true,
-    // Default numeric comparator used when sorter is omitted
   },
 ];
 
@@ -217,7 +231,6 @@ const columns: ColumnType<User>[] = [
     dataIndex: 'status',
     title: 'Status',
     filterable: true,
-    // Exact match instead of default substring:
     filterFn: (value, record) => record.status === value,
   },
 ];
@@ -245,11 +258,9 @@ const columns: ColumnType<User>[] = [
 ```tsx
 <BoltTable
   columns={columns}
-  data={allUsers}          // all 500 rows
+  data={allUsers}
   pagination={{ pageSize: 20 }}
-  onPaginationChange={(page, size) => {
-    setPage(page);
-  }}
+  onPaginationChange={(page, size) => setPage(page)}
 />
 ```
 
@@ -258,7 +269,7 @@ const columns: ColumnType<User>[] = [
 ```tsx
 <BoltTable
   columns={columns}
-  data={currentPageData}   // only 20 rows
+  data={currentPageData}
   pagination={{
     current: page,
     pageSize: 20,
@@ -287,10 +298,9 @@ const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   data={data}
   rowKey="id"
   rowSelection={{
-    type: 'checkbox',           // or 'radio'
+    type: 'checkbox',
     selectedRowKeys,
     onChange: (keys, rows) => setSelectedRowKeys(keys),
-    // Disable selection for specific rows:
     getCheckboxProps: (record) => ({
       disabled: record.status === 'locked',
     }),
@@ -315,12 +325,9 @@ const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
         <pre>{JSON.stringify(record.details, null, 2)}</pre>
       </div>
     ),
-    // Optional: control expanded state yourself
-    // expandedRowKeys={expandedKeys}
-    // onExpandedRowsChange={(keys) => setExpandedKeys(keys)}
   }}
-  expandedRowHeight={150}      // initial estimate
-  maxExpandedRowHeight={400}   // makes panel scrollable if taller
+  expandedRowHeight={150}
+  maxExpandedRowHeight={400}
 />
 ```
 
@@ -353,8 +360,6 @@ const loadMore = async () => {
 
 ### Column pinning
 
-Pinning via column definition:
-
 ```tsx
 const columns: ColumnType<User>[] = [
   { key: 'name',    dataIndex: 'name',    title: 'Name',    pinned: 'left',  width: 200 },
@@ -364,58 +369,6 @@ const columns: ColumnType<User>[] = [
 ```
 
 Users can also pin/unpin columns at runtime via the right-click context menu.
-
----
-
-### Custom cell rendering
-
-```tsx
-const columns: ColumnType<User>[] = [
-  {
-    key: 'status',
-    dataIndex: 'status',
-    title: 'Status',
-    width: 120,
-    render: (value, record) => (
-      <span
-        style={{
-          padding: '2px 8px',
-          borderRadius: 4,
-          fontSize: 12,
-          backgroundColor: record.status === 'active' ? '#d1fae5' : '#fee2e2',
-          color: record.status === 'active' ? '#065f46' : '#991b1b',
-        }}
-      >
-        {String(value)}
-      </span>
-    ),
-  },
-];
-```
-
----
-
-### Custom context menu items
-
-```tsx
-<BoltTable
-  columns={columns}
-  data={data}
-  columnContextMenuItems={[
-    {
-      key: 'copy',
-      label: 'Copy column data',
-      icon: <CopyIcon className="h-3 w-3" />,
-      onClick: (columnKey) => copyColumnToClipboard(columnKey),
-    },
-    {
-      key: 'reset-width',
-      label: 'Reset width',
-      onClick: (columnKey) => resetColumnWidth(columnKey),
-    },
-  ]}
-/>
-```
 
 ---
 
@@ -438,27 +391,6 @@ const columns: ColumnType<User>[] = [
     rowSelected: { backgroundColor: '#e0e7ff' },
     pinnedBg: 'rgba(238, 242, 255, 0.95)',
   }}
-/>
-```
-
----
-
-### Loading skeleton
-
-```tsx
-// Full skeleton on initial load (no data yet)
-<BoltTable
-  columns={columns}
-  data={[]}
-  isLoading={true}
-  pagination={{ pageSize: 20 }}
-/>
-
-// Layout skeleton before column widths are known
-<BoltTable
-  columns={columns}
-  data={[]}
-  layoutLoading={true}
 />
 ```
 
@@ -491,6 +423,7 @@ import type {
   PaginationType,
   SortDirection,
   DataRecord,
+  BoltTableIcons,
 } from 'bolt-table';
 ```
 
@@ -498,4 +431,4 @@ import type {
 
 ## License
 
-MIT © [Venkatesh Sirigineedi](https://github.com
+MIT © [Venkatesh Sirigineedi](https://github.com/venkateshsirigineedi)

@@ -1,6 +1,5 @@
 'use client';
 
-import { useSortable } from '@dnd-kit/sortable';
 import React, { CSSProperties, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -69,11 +68,14 @@ interface DraggableHeaderProps {
   /**
    * Called when the user presses down on the resize handle at the right edge
    * of this header cell. Starts the resize drag operation in BoltTable.
-   *
-   * @param columnKey - The key of the column being resized
-   * @param event     - The React mouse event from the resize handle mousedown
    */
   onResizeStart?: (columnKey: string, event: React.MouseEvent) => void;
+
+  /**
+   * Called when the user starts dragging this column header to reorder.
+   * BoltTable handles the full drag lifecycle from this point.
+   */
+  onColumnDragStart?: (columnKey: string, event: React.PointerEvent) => void;
 
   /**
    * Shared styling overrides for header cells.
@@ -99,7 +101,7 @@ interface DraggableHeaderProps {
 
   /**
    * A custom React node to use as the drag grip icon.
-   * When omitted, the default `GripVertical` icon from lucide-react is used.
+   * When omitted, the default `GripVertical` icon is used.
    *
    * @example
    * gripIcon={<MyCustomDragIcon />}
@@ -263,41 +265,20 @@ const DraggableHeader = React.memo(
     onClearFilter,
     customContextMenuItems,
     icons,
+    onColumnDragStart,
   }: DraggableHeaderProps) => {
     const effectivelySortable = isColumnSortable(column);
     const effectivelyFilterable = isColumnFilterable(column);
 
-    /**
-     * State for the right-click context menu.
-     * `null` means hidden; `{ x, y }` means visible at those viewport coordinates.
-     */
     const [contextMenu, setContextMenu] = useState<{
       x: number;
       y: number;
     } | null>(null);
 
-    /**
-     * When `true`, the filter text input is shown inside the context menu
-     * instead of the "Filter Column" button.
-     */
     const [showFilterInput, setShowFilterInput] = useState(false);
 
     const filterInputRef = useRef<HTMLInputElement>(null);
     const menuRef = useRef<HTMLDivElement>(null);
-
-    // dnd-kit sortable hook — provides drag listeners, transform styles, and state
-    const {
-      attributes,
-      listeners,
-      setNodeRef,
-      transition,
-      isDragging,  // true while this header is being dragged
-      isOver,      // true while another header is being dragged over this one
-    } = useSortable({
-      id: column.key,
-      // Pinned columns cannot be dragged (their position is fixed by pinning)
-      disabled: Boolean(column.pinned),
-    });
 
     // ── Close context menu when clicking outside it ─────────────────────────
     useEffect(() => {
@@ -354,88 +335,72 @@ const DraggableHeader = React.memo(
     const columnWidth = column.width ?? 150;
     const widthPx = `${columnWidth}px`;
     const isPinned = Boolean(column.pinned);
+    const zIndex = isPinned ? 12 : 10;
 
-    // Dragging this header → lower z-index so it appears above body but below menus
-    // Pinned headers → z-index 12 to stay above scrolling content
-    // Normal headers → z-index 10
-    const zIndex = isDragging ? 5 : isPinned ? 12 : 10;
-
-    /**
-     * Computed inline styles for the header cell.
-     * Handles: sticky positioning, drag opacity/transition, pinned offset,
-     * drag-over border highlight, and user-provided style overrides.
-     */
-    const style: CSSProperties = {
+    const headerStyle: CSSProperties = {
       position: 'sticky',
       top: 0,
       zIndex,
-      // Last column stretches to fill remaining space; all others are fixed width
       width: isLastColumn ? '100%' : widthPx,
       minWidth: widthPx,
       ...(isLastColumn ? {} : { maxWidth: widthPx }),
       gridColumn: visualIndex + 1,
       gridRow: 1,
-      // Fade out slightly while being dragged
-      opacity: isDragging ? 0.3 : 1,
-      transition: transition,
-      borderWidth: '1px',
-      // Show a dashed accent-colored border when another column is dragged over this one
-      borderStyle: isOver ? ('dashed' as const) : 'solid',
-      ...(isOver
-        ? { borderColor: accentColor || '#1788ff' }
-        : { borderLeftColor: 'transparent' }),
-      // Sticky positioning for pinned columns
+      borderTop: 'none',
+      borderRight: 'none',
+      borderBottom: '1px solid rgba(128,128,128,0.2)',
+      borderLeft: 'none',
       ...(column.pinned === 'left' && stickyOffset !== undefined
-        ? { left: `${stickyOffset}px`, position: 'sticky' as const }
+        ? { left: `${stickyOffset}px` }
         : {}),
       ...(column.pinned === 'right' && stickyOffset !== undefined
-        ? { right: `${stickyOffset}px`, position: 'sticky' as const }
+        ? { right: `${stickyOffset}px` }
         : {}),
-      // Pinned columns get a semi-transparent background so they visually
-      // separate from scrolling content behind them
       ...(isPinned
         ? {
-            backgroundColor: (styles as any)?.pinnedBg ?? 'rgba(255, 255, 255, 0.95)',
+            backgroundColor: (styles as any)?.pinnedBg ?? 'Canvas',
             ...styles?.pinnedHeader,
           }
         : {}),
-      // Column-level style overrides applied last (highest specificity)
       ...column.style,
       ...styles?.header,
-    } as CSSProperties;
-
-    const headerStyle: CSSProperties = {
-      ...style,
-      backgroundColor: style.backgroundColor ?? 'rgba(248, 250, 252, 0.4)',
-      position: 'sticky' as const,
+      backgroundColor:
+        ((styles as any)?.pinnedBg && isPinned)
+          ? (styles as any).pinnedBg
+          : (isPinned ? 'Canvas' : 'rgba(128,128,128,0.06)'),
       display: 'flex',
       height: 36,
       alignItems: 'center',
       overflow: 'hidden',
       textOverflow: 'ellipsis',
       whiteSpace: 'nowrap' as const,
-      backdropFilter: 'blur(8px)',
+      ...(isPinned
+        ? {}
+        : { backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }),
     };
 
     return (
       <>
         <div
-          ref={setNodeRef}
           data-column-key={column.key}
           data-bt-header=""
           style={headerStyle}
           className={`${column.className ?? ''} ${classNames?.header ?? ''} ${isPinned ? (classNames?.pinnedHeader ?? '') : ''}`}
           onContextMenu={handleContextMenu}
         >
-          {/*
-           * ── Drag handle + label area ────────────────────────────────────
-           * This inner div receives the dnd-kit listeners and attributes.
-           * For pinned columns, listeners are omitted so they cannot be dragged.
-           * `touch-none` prevents browser scroll interference during drag.
-           */}
           <div
-            {...(isPinned ? {} : attributes)}
-            {...(isPinned ? {} : listeners)}
+            role={isPinned ? undefined : 'button'}
+            tabIndex={isPinned ? undefined : 0}
+            aria-roledescription={isPinned ? undefined : 'sortable'}
+            onPointerDown={
+              isPinned
+                ? undefined
+                : (e) => {
+                    if (e.button !== 0) return;
+                    e.preventDefault();
+                    onColumnDragStart?.(column.key, e);
+                  }
+            }
             style={{
               position: 'relative',
               zIndex: 10,
@@ -450,6 +415,7 @@ const DraggableHeader = React.memo(
               whiteSpace: 'nowrap' as const,
               paddingLeft: 8,
               paddingRight: 8,
+              borderLeft: '1px solid rgba(128,128,128,0.2)',
               fontWeight: 500,
               cursor: isPinned ? 'default' : 'grab',
             }}
@@ -585,12 +551,12 @@ const DraggableHeader = React.memo(
                 zIndex: 9999,
                 minWidth: 160,
                 borderRadius: 6,
-                border: '1px solid #e5e7eb',
+                border: '1px solid rgba(128,128,128,0.2)',
                 paddingTop: 4,
                 paddingBottom: 4,
                 boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.1)',
                 backdropFilter: 'blur(12px)',
-                backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                backgroundColor: 'rgba(128,128,128,0.1)',
                 left: `${contextMenu.x}px`,
                 top: `${contextMenu.y}px`,
               }}
@@ -654,7 +620,7 @@ const DraggableHeader = React.memo(
                     {icons?.sortDesc ?? <ArrowDownAZIcon style={{ width: 12, height: 12 }} />}
                     Sort Descending
                   </button>
-                  <div style={{ marginTop: 4, marginBottom: 4, borderTop: '1px solid #e5e7eb' }} />
+                  <div style={{ marginTop: 4, marginBottom: 4, borderTop: '1px solid rgba(128,128,128,0.2)' }} />
                 </>
               )}
 
@@ -671,7 +637,7 @@ const DraggableHeader = React.memo(
                         style={{
                           width: '100%',
                           borderRadius: 4,
-                          border: '1px solid #e5e7eb',
+                          border: '1px solid rgba(128,128,128,0.2)',
                           paddingLeft: 6,
                           paddingRight: 6,
                           paddingTop: 2,
@@ -754,7 +720,7 @@ const DraggableHeader = React.memo(
                       Clear Filter
                     </button>
                   )}
-                  <div style={{ marginTop: 4, marginBottom: 4, borderTop: '1px solid #e5e7eb' }} />
+                  <div style={{ marginTop: 4, marginBottom: 4, borderTop: '1px solid rgba(128,128,128,0.2)' }} />
                 </>
               )}
 
@@ -824,7 +790,7 @@ const DraggableHeader = React.memo(
 
               {!isPinned && (
                 <>
-                  <div style={{ marginTop: 4, marginBottom: 4, borderTop: '1px solid #e5e7eb' }} />
+                  <div style={{ marginTop: 4, marginBottom: 4, borderTop: '1px solid rgba(128,128,128,0.2)' }} />
                   <button
                     data-bt-ctx-item=""
                     style={{
@@ -856,7 +822,7 @@ const DraggableHeader = React.memo(
 
               {customContextMenuItems && customContextMenuItems.length > 0 && (
                 <>
-                  <div style={{ marginTop: 4, marginBottom: 4, borderTop: '1px solid #e5e7eb' }} />
+                  <div style={{ marginTop: 4, marginBottom: 4, borderTop: '1px solid rgba(128,128,128,0.2)' }} />
                   {customContextMenuItems.map((item) => (
                     <button
                       key={item.key}

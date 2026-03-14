@@ -1,20 +1,5 @@
 'use client';
 
-import {
-  closestCenter,
-  DndContext,
-  DragEndEvent,
-  DragOverlay,
-  DragStartEvent,
-  PointerSensor,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core';
-import {
-  arrayMove,
-  horizontalListSortingStrategy,
-  SortableContext,
-} from '@dnd-kit/sortable';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import React, {
   CSSProperties,
@@ -23,6 +8,14 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { createPortal } from 'react-dom';
+
+function arrayMove<T>(arr: T[], from: number, to: number): T[] {
+  const result = arr.slice();
+  const [item] = result.splice(from, 1);
+  result.splice(to, 0, item);
+  return result;
+}
 
 import DraggableHeader from './DraggableHeader';
 import {
@@ -1139,40 +1132,121 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     currentX: number;
   } | null>(null);
 
-  // ─── DnD sensors ──────────────────────────────────────────────────────────
-  // PointerSensor handles both mouse and touch drag events.
-  const sensors = useSensors(useSensor(PointerSensor));
+  // ─── Custom column drag-and-drop ────────────────────────────────────────────
+  // Zero-dependency DnD: uses native pointer events, DOM attributes for visual
+  // state (zero re-renders during drag), and a portal ghost element.
+  const overIdRef = useRef<string | null>(null);
+  const dragActiveIdRef = useRef<string | null>(null);
+  const ghostRef = useRef<HTMLDivElement>(null);
+  const onColumnOrderChangeRef = useRef(onColumnOrderChange);
+  onColumnOrderChangeRef.current = onColumnOrderChange;
 
-  /**
-   * Called when the user starts dragging a column header.
-   * System columns (__select__, __expand__) cannot be dragged.
-   */
-  const handleDragStart = (event: DragStartEvent) => {
-    if (event.active.id === '__select__' || event.active.id === '__expand__')
-      return;
-    setActiveId(event.active.id as string);
-  };
+  const handleColumnDragStart = useCallback(
+    (columnKey: string, e: React.PointerEvent) => {
+      if (columnKey === '__select__' || columnKey === '__expand__') return;
+      const headerEl = (e.currentTarget as HTMLElement).closest<HTMLElement>(
+        '[data-column-key]',
+      );
+      if (!headerEl) return;
 
-  /**
-   * Called when the user drops a column header into a new position.
-   * Updates column order state and notifies the parent via onColumnOrderChange.
-   * The parent callback is deferred with setTimeout to avoid firing inside a
-   * React updater (which would cause "Cannot update a component while rendering
-   * a different component" if the parent calls its own setState).
-   */
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (over && active.id !== over.id) {
-      setColumnOrder((items) => {
-        const oldIndex = items.indexOf(active.id as string);
-        const newIndex = items.indexOf(over.id as string);
-        const newOrder = arrayMove(items, oldIndex, newIndex);
-        setTimeout(() => onColumnOrderChange?.(newOrder), 0);
-        return newOrder;
-      });
-    }
-    setActiveId(null);
-  };
+      const rect = headerEl.getBoundingClientRect();
+      const offsetX = e.clientX - rect.left;
+      const offsetY = e.clientY - rect.top;
+
+      setActiveId(columnKey);
+      dragActiveIdRef.current = columnKey;
+      headerEl.setAttribute('data-dragging', '');
+
+      const ghost = ghostRef.current;
+      if (ghost) {
+        ghost.style.display = 'flex';
+        ghost.style.width = `${rect.width}px`;
+        ghost.style.left = `${e.clientX - offsetX}px`;
+        ghost.style.top = `${rect.top}px`;
+      }
+
+      const onMove = (ev: PointerEvent) => {
+        if (ghost) {
+          ghost.style.left = `${ev.clientX - offsetX}px`;
+          ghost.style.top = `${ev.clientY - offsetY}px`;
+        }
+        const scrollEl = tableAreaRef.current;
+        if (!scrollEl) return;
+        const headers =
+          scrollEl.querySelectorAll<HTMLElement>('[data-column-key]');
+        let newOverId: string | null = null;
+        headers.forEach((h) => {
+          const key = h.dataset.columnKey;
+          if (
+            !key ||
+            key === '__select__' ||
+            key === '__expand__' ||
+            key === columnKey
+          ) {
+            h.removeAttribute('data-drag-over');
+            return;
+          }
+          const r = h.getBoundingClientRect();
+          if (
+            ev.clientX >= r.left &&
+            ev.clientX <= r.right &&
+            ev.clientY >= r.top - 20 &&
+            ev.clientY <= r.bottom + 20
+          ) {
+            newOverId = key;
+            h.setAttribute('data-drag-over', '');
+          } else {
+            h.removeAttribute('data-drag-over');
+          }
+        });
+        overIdRef.current = newOverId;
+      };
+
+      const onUp = () => {
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onUp);
+        const scrollEl = tableAreaRef.current;
+        if (scrollEl) {
+          scrollEl
+            .querySelectorAll<HTMLElement>('[data-dragging]')
+            .forEach((h) => h.removeAttribute('data-dragging'));
+          scrollEl
+            .querySelectorAll<HTMLElement>('[data-drag-over]')
+            .forEach((h) => h.removeAttribute('data-drag-over'));
+        }
+        if (ghost) ghost.style.display = 'none';
+
+        const currentOverId = overIdRef.current;
+        const currentActiveId = dragActiveIdRef.current;
+        if (
+          currentOverId &&
+          currentActiveId &&
+          currentOverId !== currentActiveId
+        ) {
+          React.startTransition(() => {
+            setColumnOrder((items) => {
+              const oldIndex = items.indexOf(currentActiveId);
+              const newIndex = items.indexOf(currentOverId);
+              if (oldIndex === -1 || newIndex === -1) return items;
+              const newOrder = arrayMove(items, oldIndex, newIndex);
+              setTimeout(
+                () => onColumnOrderChangeRef.current?.(newOrder),
+                0,
+              );
+              return newOrder;
+            });
+          });
+        }
+        setActiveId(null);
+        dragActiveIdRef.current = null;
+        overIdRef.current = null;
+      };
+
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', onUp);
+    },
+    [],
+  );
 
   /**
    * Called on mousedown of a column's resize handle.
@@ -1250,19 +1324,22 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     const { startX, startWidth, currentX, columnKey } = resizeStateRef.current;
     const finalWidth = Math.max(40, startWidth + (currentX - startX));
 
-    manuallyResizedRef.current.add(columnKey);
-
-    setColumnWidths((prev) => {
-      const next = new Map(prev);
-      next.set(columnKey, finalWidth);
-      return next;
-    });
-
-    onColumnResize?.(columnKey, finalWidth);
     resizeOverlayRef.current?.hide();
     resizeStateRef.current = null;
     document.removeEventListener('mousemove', handleResizeMove);
     document.removeEventListener('mouseup', handleResizeEnd);
+
+    manuallyResizedRef.current.add(columnKey);
+
+    React.startTransition(() => {
+      setColumnWidths((prev) => {
+        const next = new Map(prev);
+        next.set(columnKey, finalWidth);
+        return next;
+      });
+    });
+
+    onColumnResize?.(columnKey, finalWidth);
   }, [onColumnResize]);
 
   // ─── Column ordering & pinning ─────────────────────────────────────────────
@@ -1757,7 +1834,8 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
   // autoHeight=false → fills parent container via flex-1 / h-full.
   const HEADER_HEIGHT = 36;
   const MAX_AUTO_ROWS = 10;
-  const naturalContentHeight = rowVirtualizer.getTotalSize() + HEADER_HEIGHT;
+  const virtualTotalSize = rowVirtualizer.getTotalSize();
+  const naturalContentHeight = virtualTotalSize + HEADER_HEIGHT;
   const maxAutoHeight = MAX_AUTO_ROWS * rowHeight + HEADER_HEIGHT;
   const isEmpty = displayData.length === 0 && !showShimmer;
   const emptyMinHeight = 4 * rowHeight + HEADER_HEIGHT;
@@ -1767,12 +1845,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
     : Math.min(naturalContentHeight, maxAutoHeight);
 
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCenter}
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
-    >
+    <>
       <div
         className={className}
         style={{
@@ -1813,6 +1886,12 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
           }
           [data-bt-ctx-item]:not(:disabled):hover {
             background-color: rgba(0, 0, 0, 0.06);
+          }
+          [data-column-key][data-dragging] {
+            opacity: 0.3 !important;
+          }
+          [data-column-key][data-drag-over] {
+            border: 1px dashed ${accentColor} !important;
           }
         `}</style>
 
@@ -1878,12 +1957,8 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap' as const,
-                        borderTop: '1px solid #e5e7eb',
-                        borderBottom: '1px solid #e5e7eb',
+                        borderBottom: '1px solid rgba(128,128,128,0.2)',
                         backdropFilter: 'blur(8px)',
-                        backgroundColor: isPinned
-                          ? 'rgba(255, 255, 255, 0.95)'
-                          : 'rgba(248, 250, 252, 0.4)',
                         position: 'sticky',
                         top: 0,
                         zIndex: isPinned ? 13 : 10,
@@ -1927,11 +2002,10 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                             style={{
                               display: 'flex',
                               alignItems: 'center',
-                              borderBottom: '1px solid #e5e7eb',
+                              borderBottom: '1px solid rgba(128,128,128,0.2)',
                               ...(isPinned
                                 ? {
                                     position: 'sticky' as const,
-                                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
                                     [column.pinned as string]: offset ?? 0,
                                     zIndex: 5,
                                     ...styles.pinnedCell,
@@ -1991,7 +2065,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                 style={{
                   display: 'grid',
                   gridTemplateColumns,
-                  gridTemplateRows: isEmpty ? '36px 1fr' : '36px auto',
+                  gridTemplateRows: isEmpty ? '36px 1fr' : `36px ${virtualTotalSize}px`,
                   minWidth: `${totalTableWidth}px`,
                   width: '100%',
                   position: 'relative',
@@ -1999,10 +2073,6 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                 }}
               >
                 {/* ── Column headers ─────────────────────────────────── */}
-                <SortableContext
-                  items={columnOrder}
-                  strategy={horizontalListSortingStrategy}
-                >
                   {orderedColumns.map((column, visualIndex) => {
                     // Selection column header — custom render with "select all" checkbox
                     if (column.key === '__select__' && rowSelection) {
@@ -2018,10 +2088,8 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap' as const,
-                            borderTop: '1px solid #e5e7eb',
-                            borderBottom: '1px solid #e5e7eb',
-                            backdropFilter: 'blur(8px)',
-                            backgroundColor: 'rgba(248, 250, 252, 0.4)',
+                            borderBottom: '1px solid rgba(128,128,128,0.2)',
+                            backgroundColor: 'Canvas',
                             position: 'sticky',
                             left: columnOffsets.get('__select__') ?? 0,
                             top: 0,
@@ -2089,10 +2157,8 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap' as const,
-                            borderTop: '1px solid #e5e7eb',
-                            borderBottom: '1px solid #e5e7eb',
-                            backdropFilter: 'blur(8px)',
-                            backgroundColor: 'rgba(248, 250, 252, 0.4)',
+                            borderBottom: '1px solid rgba(128,128,128,0.2)',
+                            backgroundColor: 'Canvas',
                             position: 'sticky',
                             left: columnOffsets.get('__expand__') ?? 0,
                             top: 0,
@@ -2113,6 +2179,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                         accentColor={accentColor}
                         visualIndex={visualIndex}
                         onResizeStart={handleResizeStart}
+                        onColumnDragStart={handleColumnDragStart}
                         styles={styles}
                         classNames={classNames}
                         gripIcon={gripIcon}
@@ -2135,7 +2202,6 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                       />
                     );
                   })}
-                </SortableContext>
 
                 {isEmpty ? (
                   /*
@@ -2237,12 +2303,12 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
               height: 36,
               alignItems: 'center',
               justifyContent: 'space-between',
-              borderTop: '1px solid #e5e7eb',
+              borderTop: '1px solid rgba(128,128,128,0.2)',
               paddingLeft: 12,
               paddingRight: 12,
               fontSize: 12,
               backdropFilter: 'blur(8px)',
-              backgroundColor: 'rgba(255, 255, 255, 0.4)',
+              backgroundColor: 'rgba(128,128,128,0.06)',
               gap: 12,
             }}
           >
@@ -2418,7 +2484,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                 style={{
                   cursor: 'pointer',
                   borderRadius: 4,
-                  border: '1px solid #e5e7eb',
+                  border: '1px solid rgba(128,128,128,0.2)',
                   paddingLeft: 6,
                   paddingRight: 6,
                   paddingTop: 2,
@@ -2440,50 +2506,50 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
         )}
       </div>
 
-      {/*
-       * ── Drag overlay ──────────────────────────────────────────────────────
-       * Renders a "ghost" version of the dragged column header that follows
-       * the cursor during a drag operation. Only shown when activeColumn is set.
-       */}
-      <DragOverlay>
-        {activeColumn ? (
+      {/* ── Drag ghost overlay ──────────────────────────────────────────────── */}
+      {typeof document !== 'undefined' &&
+        createPortal(
           <div
+            ref={ghostRef}
             className={`${classNames.header ?? ''} ${classNames.dragHeader ?? ''}`}
             style={{
-              display: 'flex',
+              display: 'none',
+              position: 'fixed',
+              zIndex: 99999,
               height: 36,
               alignItems: 'center',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap' as const,
-              border: '1px dashed #e5e7eb',
-              boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1)',
-              backdropFilter: 'blur(8px)',
-              width: `${activeColumn.width ?? 150}px`,
+              borderRadius: 6,
+              border: '1px dashed rgba(128,128,128,0.3)',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+              backdropFilter: 'blur(16px)',
+              WebkitBackdropFilter: 'blur(16px)',
+              backgroundColor: 'rgba(128,128,128,0.12)',
               cursor: 'grabbing',
+              pointerEvents: 'none',
               ...styles.header,
               ...styles.dragHeader,
             }}
           >
             <div
               style={{
-                position: 'relative',
-                zIndex: 10,
                 display: 'flex',
                 height: '100%',
                 flex: '1 1 0%',
                 alignItems: 'center',
                 gap: 4,
                 overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap' as const,
                 paddingLeft: 8,
                 paddingRight: 8,
                 fontWeight: 500,
               }}
             >
               {icons?.gripVertical ?? gripIcon ?? (
-                <GripVerticalIcon style={{ width: 12, height: 12, flexShrink: 0 }} />
+                <GripVerticalIcon
+                  style={{ width: 12, height: 12, flexShrink: 0 }}
+                />
               )}
               <div
                 style={{
@@ -2495,14 +2561,16 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                   userSelect: 'none',
                 }}
               >
-                {typeof activeColumn.title === 'string'
-                  ? activeColumn.title
-                  : activeColumn.key}
+                {activeColumn
+                  ? typeof activeColumn.title === 'string'
+                    ? activeColumn.title
+                    : activeColumn.key
+                  : ''}
               </div>
             </div>
-          </div>
-        ) : null}
-      </DragOverlay>
-    </DndContext>
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }

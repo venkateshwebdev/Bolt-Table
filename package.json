@@ -23,8 +23,6 @@
     "prepublishOnly": "npm run build"
   },
   "peerDependencies": {
-    "@dnd-kit/core": ">=6",
-    "@dnd-kit/sortable": ">=7",
     "@tanstack/react-virtual": "^3.13.22",
     "react": ">=18",
     "react-dom": ">=18"
