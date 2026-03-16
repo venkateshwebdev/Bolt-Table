@@ -1756,4 +1756,4 @@ import type {
 
 ## License
 
-MIT © [Venkatesh Sirigineedi](https://github.com/venkateshsirigineedi)
+MIT © [Venkatesh Sirigineedi](https://github.com/venkateshwebdev)
