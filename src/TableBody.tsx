@@ -3,7 +3,6 @@
 import type { VirtualItem, Virtualizer } from '@tanstack/react-virtual';
 import React, { useEffect, useMemo, useRef } from 'react';
 
-
 import { ClassNamesTypes, StylesTypes } from './BoltTable';
 import type {
   ColumnType,
@@ -250,6 +249,14 @@ interface CellProps {
    * Triggered for rows whose key starts with `__shimmer_` or when `isLoading` is true.
    */
   isLoading?: boolean;
+
+  /**
+   * A serialized snapshot of the record's field values, computed in TableBody.
+   * Used by the memo comparator to detect data changes even when the record
+   * object is mutated in place (same reference, different values).
+   * Only provided for cells with a `render` function.
+   */
+  recordFingerprint?: string;
 }
 
 /**
@@ -290,7 +297,6 @@ const Cell = React.memo(
     isLoading,
   }: CellProps) => {
     const isPinned = Boolean(column.pinned);
-
     // ── 1. Shimmer state ──────────────────────────────────────────────────────
     // Skip shimmer for system columns (__select__, __expand__) — they have no
     // meaningful skeleton. Other columns render either a custom shimmerRender
@@ -465,7 +471,9 @@ const Cell = React.memo(
       return prev.isExpanded === next.isExpanded;
     }
     if (prev.column.render) {
-      return prev.record === next.record && prev.rowIndex === next.rowIndex;
+      if (prev.recordFingerprint !== next.recordFingerprint) return false;
+      if (prev.rowIndex !== next.rowIndex) return false;
+      return prev.column.render === next.column.render;
     }
     return (
       prev.value === next.value &&
@@ -641,6 +649,7 @@ const TableBody: React.FC<TableBodyProps> = ({
        */}
       {columnStyles.map((colStyle, colIndex) => {
         const col = orderedColumns[colIndex];
+        const hasRender = !!col.render;
 
         return (
           <div
@@ -657,6 +666,9 @@ const TableBody: React.FC<TableBodyProps> = ({
               const cellValue = row[col.dataIndex];
               // Rows with shimmer keys or when isLoading=true render as skeletons
               const isRowShimmer = isLoading || rowKey.startsWith('__shimmer_');
+              const recordFingerprint = hasRender && !isRowShimmer
+                ? JSON.stringify(row)
+                : undefined;
 
               return (
                 /*
@@ -703,6 +715,7 @@ const TableBody: React.FC<TableBodyProps> = ({
                       getRowKey={getRowKey}
                       accentColor={accentColor}
                       isLoading={isRowShimmer}
+                      recordFingerprint={recordFingerprint}
                     />
                   </div>
                 </div>

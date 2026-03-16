@@ -1374,6 +1374,38 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     [leftPinned, unpinned, rightPinned],
   );
 
+  // Overlay the latest render/functional props from the parent's columns onto
+  // orderedColumns. The internal `columns` state only syncs on structural
+  // fingerprint changes (key/pinned/hidden/width), so render function closures
+  // captured at initialization become stale when the parent re-renders with
+  // updated state. Reading from `initialColumnsRef.current` (updated every
+  // render) ensures Cell always calls the freshest render function.
+  const freshOrderedColumns = useMemo(() => {
+    const latestMap = new Map(
+      initialColumnsRef.current.map((c) => [c.key, c]),
+    );
+    return orderedColumns.map((col) => {
+      if (col.key === '__select__' || col.key === '__expand__') return col;
+      const latest = latestMap.get(col.key);
+      if (!latest) return col;
+      if (
+        col.render === latest.render &&
+        col.shimmerRender === latest.shimmerRender
+      )
+        return col;
+      return {
+        ...col,
+        render: latest.render,
+        shimmerRender: latest.shimmerRender,
+      };
+    });
+    // initialColumns is intentionally read via ref, not a dependency.
+    // This memo recomputes when orderedColumns changes (structural changes),
+    // but also produces fresh render fns on every call because the ref is
+    // always current. The useMemo here deduplicates when nothing changed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderedColumns, initialColumns]);
+
   // Total pixel width of all columns (used for minWidth on the grid)
   const totalTableWidth = useMemo(
     () =>
@@ -2253,7 +2285,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                   /* ── Virtualized table body ─────────────────────────── */
                   <TableBody
                     data={displayData as DataRecord[]}
-                    orderedColumns={orderedColumns as ColumnType<DataRecord>[]}
+                    orderedColumns={freshOrderedColumns as ColumnType<DataRecord>[]}
                     rowVirtualizer={rowVirtualizer}
                     columnOffsets={columnOffsets}
                     styles={styles}
@@ -2517,6 +2549,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
               position: 'fixed',
               zIndex: 99999,
               height: 36,
+              fontSize: 12,
               alignItems: 'center',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
