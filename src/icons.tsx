@@ -130,19 +130,7 @@ export const EyeOffIcon: React.FC<IconProps> = ({ style, className }) => (
   </svg>
 );
 
-/**
- * Customizable icon overrides for BoltTable.
- * Pass any of these to the `icons` prop on BoltTable to replace the default SVG icons.
- * Each icon should be a pre-sized React node (e.g. an SVG at 12×12px).
- *
- * @example
- * <BoltTable
- *   icons={{
- *     gripVertical: <MyGripIcon size={12} />,
- *     sortAsc: <MySortUpIcon size={12} />,
- *   }}
- * />
- */
+/** Customizable icon overrides for BoltTable. */
 export interface BoltTableIcons {
   gripVertical?: React.ReactNode;
   sortAsc?: React.ReactNode;

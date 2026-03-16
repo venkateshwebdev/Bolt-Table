@@ -11,301 +11,98 @@ import type {
   RowSelectionConfig,
 } from './types';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// TableBody
-//
-// Renders the virtualized body of BoltTable. It is architected around the
-// CSS Grid layout that BoltTable establishes: one column per table column,
-// where each grid column contains an absolutely-positioned stack of cells.
-//
-// Architecture overview:
-//
-//   ┌─────────────────────────────────────────────────────────────┐
-//   │  Grid (gridTemplateColumns mirrors header)                   │
-//   │                                                              │
-//   │  col 1        col 2        col 3        ...                 │
-//   │  ┌──────────┐ ┌──────────┐ ┌──────────┐                    │
-//   │  │ spacer   │ │ spacer   │ │ spacer   │  ← height=totalSize │
-//   │  │          │ │          │ │          │                     │
-//   │  │  cell 0  │ │  cell 0  │ │  cell 0  │  ← absolute pos    │
-//   │  │  cell 1  │ │  cell 1  │ │  cell 1  │                     │
-//   │  │  ...     │ │  ...     │ │  ...     │                     │
-//   │  └──────────┘ └──────────┘ └──────────┘                    │
-//   │                                                              │
-//   │  expanded row overlay (gridColumn: 1/-1, z-index: 15)       │
-//   └─────────────────────────────────────────────────────────────┘
-//
-// Why this layout:
-//   1. Each column is a single sticky-capable block, so pinned columns can use
-//      `position: sticky` without breaking the column alignment.
-//   2. Virtualizer only controls the Y-axis (which rows are rendered and their
-//      top offset). The X-axis is handled entirely by CSS Grid.
-//   3. Expanded rows are in a separate overlay div that spans all columns,
-//      positioned absolutely below their parent row and viewport-locked via
-//      `position: sticky; left: 0`.
-//
-// Performance optimizations:
-//   - Cell is wrapped in React.memo with a custom comparator. Selection and
-//     expand cells only re-render when their specific row's state changes.
-//     Normal cells only re-render when their value changes.
-//   - Pinned column background is applied at the column-spacer level (not per
-//     cell) so changing the scroll position never causes cell re-renders.
-//   - MeasuredExpandedRow uses a ResizeObserver to report content height to
-//     the virtualizer without causing React re-renders on every frame.
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Props for the TableBody component.
- * All props are passed automatically by BoltTable — this is an internal component.
- */
 interface TableBodyProps {
-  /** The current page's row data (already sliced/filtered/sorted by BoltTable) */
+  /** Current page's row data */
   data: DataRecord[];
 
-  /** The ordered visible columns (left pinned → unpinned → right pinned) */
+  /** Ordered visible columns (left pinned → unpinned → right pinned) */
   orderedColumns: ColumnType<DataRecord>[];
 
-  /**
-   * The TanStack Virtual row virtualizer instance.
-   * Provides `getVirtualItems()` and `getTotalSize()` for rendering.
-   */
+  /** TanStack Virtual row virtualizer instance */
   rowVirtualizer: Virtualizer<HTMLDivElement, Element>;
 
-  /**
-   * Map of column key → sticky offset in pixels.
-   * For left-pinned columns: distance from the left edge.
-   * For right-pinned columns: distance from the right edge.
-   */
+  /** Map of column key → sticky offset in pixels */
   columnOffsets: Map<string, number>;
 
-  /** Shared style overrides passed down from BoltTable */
+  /** Shared style overrides from BoltTable */
   styles?: StylesTypes;
 
-  /** Shared class name overrides passed down from BoltTable */
+  /** Shared class name overrides from BoltTable */
   classNames?: ClassNamesTypes;
 
-  /**
-   * Row selection configuration.
-   * When provided, the `__select__` column renders checkboxes or radio buttons.
-   * `undefined` during shimmer loading to prevent selection UI on skeleton rows.
-   */
+  /** Row selection configuration */
   rowSelection?: RowSelectionConfig<DataRecord>;
 
-  /**
-   * Pre-normalized selected row keys (all converted to strings).
-   * Normalized in BoltTable so Cell never has to deal with number/string mismatches.
-   *
-   * @default []
-   */
+  /** Pre-normalized selected row keys (all strings) */
   normalizedSelectedKeys?: string[];
 
-  /**
-   * Returns the string key for a given row record and index.
-   * Derived from BoltTable's `rowKey` prop. Always returns a string.
-   *
-   * @param record - The row data object
-   * @param index  - The row's position in the data array
-   */
+  /** Returns the string key for a given row record and index */
   getRowKey?: (record: DataRecord, index: number) => string;
 
-  /**
-   * Expandable row configuration.
-   * When provided, rows in `resolvedExpandedKeys` render an expanded content panel.
-   * `undefined` during shimmer loading to prevent expand UI on skeleton rows.
-   */
+  /** Expandable row configuration */
   expandable?: ExpandableConfig<DataRecord>;
 
-  /**
-   * The set of currently expanded row keys.
-   * Used to determine whether to render the expanded content panel for each row.
-   */
+  /** Set of currently expanded row keys */
   resolvedExpandedKeys?: Set<React.Key>;
 
-  /**
-   * Height of each regular (non-expanded) row in pixels.
-   * Must match the `rowHeight` prop passed to BoltTable.
-   *
-   * @default 40
-   */
+  /** Height of each regular row in pixels */
   rowHeight?: number;
 
-  /**
-   * Total pixel width of all columns combined.
-   * Used to set `minWidth` on the column spacer so the grid never collapses
-   * below the sum of all column widths.
-   */
+  /** Total pixel width of all columns combined */
   totalTableWidth?: number;
 
-  /**
-   * The visible width of the scroll container in pixels.
-   * Used to set the width of expanded row panels and the empty state div
-   * so they fill exactly the visible viewport rather than the full content width.
-   */
+  /** Visible width of the scroll container in pixels */
   scrollAreaWidth?: number;
 
-  /**
-   * The accent color used for the expand toggle button chevron icon.
-   * Should match the `accentColor` prop on BoltTable.
-   *
-   * @default '#1890ff'
-   */
+  /** Accent color for the expand toggle button */
   accentColor?: string;
 
-  /**
-   * Ref to the scroll container element.
-   * Reserved for potential future use (e.g. programmatic scrolling from within TableBody).
-   */
+  /** Ref to the scroll container element */
   scrollContainerRef?: React.RefObject<HTMLDivElement | null>;
 
-  /**
-   * When `true`, all cells render as animated shimmer skeletons instead of
-   * real data. Used during initial loading when `data` is empty.
-   *
-   * @default false
-   */
+  /** When true, cells render as shimmer skeletons */
   isLoading?: boolean;
 
-  /**
-   * Called by `MeasuredExpandedRow` when an expanded row's content height changes.
-   * BoltTable uses this to update the virtualizer's size estimate for that row,
-   * triggering a re-layout so the expanded content is never clipped.
-   *
-   * @param rowKey        - The string key of the row whose expanded height changed
-   * @param contentHeight - The new content height in pixels (border-box)
-   */
+  /** Called when an expanded row's content height changes */
   onExpandedRowResize?: (rowKey: string, contentHeight: number) => void;
 
-  /**
-   * Optional maximum height in pixels for expanded row panels.
-   * When set, the panel becomes scrollable if its content exceeds this height.
-   * When omitted, the panel grows to its full content height.
-   *
-   * @example
-   * maxExpandedRowHeight={300}
-   */
+  /** Max height for expanded row panels (scrollable if exceeded) */
   maxExpandedRowHeight?: number;
 
-  /**
-   * Rows pinned to the top of the table body.
-   * Rendered as non-virtualized sticky rows below the column headers.
-   */
+  /** Rows pinned to the top of the table body */
   pinnedTopData?: DataRecord[];
 
-  /**
-   * Rows pinned to the bottom of the table body.
-   * Rendered as non-virtualized sticky rows at the bottom of the visible area.
-   */
+  /** Rows pinned to the bottom of the table body */
   pinnedBottomData?: DataRecord[];
 
-  /**
-   * The CSS `gridTemplateColumns` string matching the parent grid.
-   * Needed for pinned row sub-grids to align with the main column layout.
-   */
+  /** CSS gridTemplateColumns string matching the parent grid */
   gridTemplateColumns?: string;
 
-  /**
-   * Height of the column header row in pixels.
-   * Used to position the sticky top pinned rows below the headers.
-   *
-   * @default 36
-   */
+  /** Height of the column header row in pixels */
   headerHeight?: number;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Cell
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** Widths (as percentages) for shimmer skeleton bars, cycled per cell position */
 const SHIMMER_WIDTHS = [55, 70, 45, 80, 60, 50, 75, 65];
 
-/**
- * Props for the Cell component.
- * All props are passed automatically by TableBody.
- */
 interface CellProps {
-  /** The raw cell value (`row[column.dataIndex]`) */
   value: unknown;
-
-  /** The full row data object */
   record: DataRecord;
-
-  /** The column definition for this cell */
   column: ColumnType<DataRecord>;
-
-  /** The row's absolute index in the current data array (0-based) */
   rowIndex: number;
-
-  /** Class name overrides from BoltTable */
   classNames?: ClassNamesTypes;
-
-  /** Style overrides from BoltTable */
   styles?: StylesTypes;
-
-  /** Whether this row is currently selected */
   isSelected?: boolean;
-
-  /** Whether this row is currently expanded */
   isExpanded?: boolean;
-
-  /** Row selection config (for `__select__` cells only) */
   rowSelection?: RowSelectionConfig<DataRecord>;
-
-  /**
-   * Pre-normalized selected row keys.
-   * Used by the `__select__` cell to derive the new selection after a toggle
-   * without risking a stale closure.
-   */
   normalizedSelectedKeys?: string[];
-
-  /** The string key for this row */
   rowKey?: string;
-
-  /** All rows in the current view — needed to derive `selectedRows` after a toggle */
   allData?: DataRecord[];
-
-  /** Row key resolver passed from BoltTable */
   getRowKey?: (record: DataRecord, index: number) => string;
-
-  /** Accent color for checkbox/radio `accentColor` style */
   accentColor?: string;
-
-  /**
-   * When `true`, renders a shimmer skeleton instead of real content.
-   * Triggered for rows whose key starts with `__shimmer_` or when `isLoading` is true.
-   */
   isLoading?: boolean;
-
-  /**
-   * A serialized snapshot of the record's field values, computed in TableBody.
-   * Used by the memo comparator to detect data changes even when the record
-   * object is mutated in place (same reference, different values).
-   * Only provided for cells with a `render` function.
-   */
   recordFingerprint?: string;
 }
 
-/**
- * Cell — renders a single table body cell.
- *
- * Handles three distinct render paths:
- *
- * 1. **Shimmer** (`isLoading=true`): renders an animated pulse skeleton bar.
- *    If the column defines a `shimmerRender` function, that is used instead.
- *
- * 2. **Selection cell** (`column.key === '__select__'`): renders a checkbox or
- *    radio button driven by `rowSelection` props. The actual checked state comes
- *    from `normalizedSelectedKeys` (not `column.render`) so selection changes
- *    never cause BoltTable's column memos to re-run.
- *
- * 3. **Normal cell**: calls `column.render(value, record, index)` if defined,
- *    otherwise renders the raw value as a React node.
- *
- * Wrapped in `React.memo` with a custom comparator:
- * - `__select__` cells: only re-render when `isSelected` or `normalizedSelectedKeys` changes
- * - `__expand__` cells: only re-render when `isExpanded` changes
- * - Normal cells: only re-render when `value` or `rowIndex` changes
- */
 const Cell = React.memo(
   ({
     value,
@@ -323,10 +120,6 @@ const Cell = React.memo(
     isLoading,
   }: CellProps) => {
     const isPinned = Boolean(column.pinned);
-    // ── 1. Shimmer state ──────────────────────────────────────────────────────
-    // Skip shimmer for system columns (__select__, __expand__) — they have no
-    // meaningful skeleton. Other columns render either a custom shimmerRender
-    // or a default animated pulse bar.
     if (
       isLoading &&
       column.key !== '__select__' &&
@@ -367,9 +160,6 @@ const Cell = React.memo(
       );
     }
 
-    // ── 2. Selection cell ─────────────────────────────────────────────────────
-    // Rendered here (not via column.render) so that checking/unchecking a row
-    // only re-renders its own Cell, never triggering BoltTable's column memos.
     if (column.key === '__select__' && rowSelection && rowKey !== undefined) {
       const checkboxProps = rowSelection.getCheckboxProps?.(record) ?? {
         disabled: false,
@@ -445,11 +235,6 @@ const Cell = React.memo(
       );
     }
 
-    // ── 3. Normal cell ────────────────────────────────────────────────────────
-    // Use column.render if provided, otherwise render the raw value.
-    // Note: the expand cell (__expand__) is handled by the render function
-    // injected into the column definition in BoltTable — it arrives here as
-    // a normal cell with a render prop.
     const content = column.render
       ? column.render(value, record, rowIndex)
       : ((value as React.ReactNode) ?? '');
@@ -480,11 +265,6 @@ const Cell = React.memo(
       </div>
     );
   },
-  // ── Custom memo comparator ─────────────────────────────────────────────────
-  // Minimizes re-renders:
-  // - __select__ cells: re-render only when selection changes
-  // - __expand__ cells: re-render only when expand state changes
-  // - Normal cells: re-render only when value or rowIndex changes
   (prev, next) => {
     if (prev.isLoading !== next.isLoading) return false;
     if (prev.column.key === '__select__') {
@@ -510,45 +290,19 @@ const Cell = React.memo(
 );
 Cell.displayName = 'Cell';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MeasuredExpandedRow
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * MeasuredExpandedRow — wraps expanded row content and reports its height.
- *
- * Uses a `ResizeObserver` to watch for content height changes and calls
- * `onResize(rowKey, height)` whenever the height changes. BoltTable uses
- * this callback to update the virtualizer's size estimate for the row,
- * so the expanded panel is always fully visible without overflow.
- *
- * Height updates are debounced via `useRef` to prevent the ResizeObserver
- * from reporting the same height repeatedly (e.g. during scroll reflows).
- * Sub-pixel values are rounded to avoid infinite measurement loops.
- *
- * @internal Used only inside TableBody's expanded row overlay section.
- */
+/** Wraps expanded row content and reports its height via ResizeObserver. */
 const MeasuredExpandedRow = React.memo(
   ({
     rowKey,
     onResize,
     children,
   }: {
-    /** The string key of the row being measured */
     rowKey: string;
-    /**
-     * Called when the content height changes.
-     * @param rowKey        - The row key
-     * @param contentHeight - The new border-box height in pixels (rounded to integer)
-     */
     onResize: (rowKey: string, height: number) => void;
-    /** The expanded row content to render and measure */
     children: React.ReactNode;
   }) => {
     const ref = useRef<HTMLDivElement>(null);
 
-    // Keep onResize in a ref so the ResizeObserver callback always calls the
-    // latest version without needing to re-subscribe on every render
     const onResizeRef = useRef(onResize);
     useEffect(() => {
       onResizeRef.current = onResize;
@@ -572,28 +326,6 @@ const MeasuredExpandedRow = React.memo(
 );
 MeasuredExpandedRow.displayName = 'MeasuredExpandedRow';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// TableBody
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * TableBody — the virtualized body renderer for BoltTable.
- *
- * Renders the visible rows using TanStack Virtual's window virtualization.
- * Only the rows currently in (or near) the viewport are in the DOM.
- *
- * Layout strategy:
- * - One `<div>` per column, spanning the full virtual height (`totalSize`px).
- * - Inside each column div, only the visible rows are rendered as
- *   `position: absolute` cells stacked at their `virtualRow.start` offset.
- * - Pinned columns use `position: sticky` on the column div itself, backed
- *   by a semi-transparent background to visually separate from scrolling content.
- * - Expanded rows are rendered in a separate full-width overlay div that sits
- *   on top of all column divs (z-index: 15) and uses `position: sticky; left: 0`
- *   to stay viewport-locked during horizontal scroll.
- *
- * @internal This is an internal BoltTable component. Use BoltTable directly.
- */
 const TableBody: React.FC<TableBodyProps> = ({
   data,
   orderedColumns,
@@ -622,8 +354,6 @@ const TableBody: React.FC<TableBodyProps> = ({
   const totalSize = rowVirtualizer.getTotalSize();
   const selectedKeySet = useMemo(() => new Set(normalizedSelectedKeys), [normalizedSelectedKeys]);
 
-  // Combined data for selection callbacks (includes pinned rows so
-  // toggling a checkbox in a pinned row can derive all selected rows)
   const allDataForSelection = useMemo(() => {
     if (pinnedTopData.length === 0 && pinnedBottomData.length === 0)
       return data;
@@ -633,27 +363,11 @@ const TableBody: React.FC<TableBodyProps> = ({
   const pinnedRowBg =
     (styles as any)?.pinnedRowBg ?? (styles as any)?.pinnedBg;
 
-  /**
-   * Pre-computed styles for each column's spacer div.
-   * Memoized so column styles only recompute when columns, offsets,
-   * total virtual height, or pinned styles change — not on every scroll.
-   *
-   * Each spacer div:
-   * - Spans the full virtual height (`totalSize`px) so the absolute-positioned
-   *   cells inside it have a stable containing block for their `top` values.
-   * - Is `position: sticky` for pinned columns (with left/right offset).
-   * - Gets a semi-transparent background for pinned columns so they visually
-   *   overlay scrolling content behind them.
-   */
   const columnStyles = useMemo(() => {
     return orderedColumns.map((col, colIndex) => {
       const stickyOffset = columnOffsets.get(col.key);
       const isPinned = Boolean(col.pinned);
 
-      // z-index hierarchy:
-      // - system columns (__select__, __expand__): 11 (above pinned, below menus)
-      // - pinned columns: 2 (above scrolling content)
-      // - normal columns: 0
       let zIndex = 0;
       if (col.key === '__select__' || col.key === '__expand__') zIndex = 11;
       else if (isPinned) zIndex = 2;
@@ -682,13 +396,6 @@ const TableBody: React.FC<TableBodyProps> = ({
 
   return (
     <>
-      {/*
-       * ── Column spacer divs ───────────────────────────────────────────────
-       * One div per column. Each div:
-       *   - Is `height: totalSize` to create the scrollable area
-       *   - Contains only the virtual (visible) rows as absolute children
-       *   - Is sticky for pinned columns
-       */}
       {columnStyles.map((colStyle, colIndex) => {
         const col = orderedColumns[colIndex];
         const hasRender = !!col.render;
@@ -706,23 +413,12 @@ const TableBody: React.FC<TableBodyProps> = ({
               const isSelected = selectedKeySet.has(rowKey);
               const isExpanded = resolvedExpandedKeys?.has(rowKey) ?? false;
               const cellValue = row[col.dataIndex];
-              // Rows with shimmer keys or when isLoading=true render as skeletons
               const isRowShimmer = isLoading || rowKey.startsWith('__shimmer_');
               const recordFingerprint = hasRender && !isRowShimmer
                 ? JSON.stringify(row)
                 : undefined;
 
               return (
-                /*
-                 * Row wrapper div:
-                 * - data-row-key: used by BoltTable's DOM-based hover system
-                 *   (mouseover reads this attribute to apply hover styles
-                 *   across all column divs for the same row simultaneously)
-                 * - data-selected: presence/absence attribute consumed by the
-                 *   CSS injected by BoltTable for selected row background
-                 * - Absolute positioned at virtualRow.start for virtualization
-                 * - Height = virtualRow.size (includes expanded row height)
-                 */
                 <div
                   key={`${rowKey}-${col.key}`}
                   data-row-key={rowKey}
@@ -769,22 +465,6 @@ const TableBody: React.FC<TableBodyProps> = ({
         );
       })}
 
-      {/*
-       * ── Expanded row overlay ─────────────────────────────────────────────
-       * A single full-width div that spans all grid columns (gridColumn: 1/-1).
-       * It has the same total height as the column spacers so absolute
-       * positioning of expanded panels uses the same coordinate space.
-       *
-       * Each expanded panel:
-       * - Is positioned at virtualRow.start + rowHeight (directly below its row)
-       * - Uses `position: sticky; left: 0; width: scrollAreaWidth` to stay
-       *   viewport-locked during horizontal scroll (pure CSS, no JS needed)
-       * - Is wrapped in MeasuredExpandedRow to auto-size the virtualizer slot
-       *
-       * Why a separate overlay div instead of rendering inside each column?
-       * Because the expanded content spans the full visible width, not one column.
-       * A single overlay avoids duplicating the content per column.
-       */}
       {expandable && (
         <div
           style={{
@@ -793,8 +473,6 @@ const TableBody: React.FC<TableBodyProps> = ({
             height: `${totalSize}px`,
             position: 'relative',
             zIndex: 15,
-            // pointerEvents: none on the overlay so hover/click pass through
-            // to the cells below for rows that are NOT expanded
             pointerEvents: 'none',
           }}
         >
@@ -804,7 +482,6 @@ const TableBody: React.FC<TableBodyProps> = ({
               ? getRowKey(row, virtualRow.index)
               : String(virtualRow.index);
 
-            // Skip rows that are not expanded
             if (!(resolvedExpandedKeys?.has(rk) ?? false)) return null;
 
             const expandedContent = (
@@ -838,18 +515,11 @@ const TableBody: React.FC<TableBodyProps> = ({
                 key={`expanded-${rk}`}
                 style={{
                   position: 'absolute',
-                  // Position immediately below the row's base height
                   top: virtualRow.start + rowHeight,
                   left: 0,
                   right: 0,
                 }}
               >
-                {/*
-                 * Wrap in MeasuredExpandedRow when a resize callback is provided.
-                 * This lets the virtualizer know the actual content height so it
-                 * allocates the right space. Without this, the virtualizer uses
-                 * `expandedRowHeight` as an estimate, which may cause clipping.
-                 */}
                 {onExpandedRowResize ? (
                   <MeasuredExpandedRow
                     rowKey={rk}
@@ -866,20 +536,6 @@ const TableBody: React.FC<TableBodyProps> = ({
         </div>
       )}
 
-      {/*
-       * ── Pinned top rows ───────────────────────────────────────────────
-       * Non-virtualized sticky rows rendered below the column headers.
-       *
-       * The outer div is a full-height (totalSize) container that gives
-       * the inner sticky div enough room to travel as the user scrolls.
-       * Without this wrapper, position: sticky on a grid item in a cell
-       * with multiple overlapping items does not reliably stick in all
-       * browsers. (Same pattern as the expanded row overlay.)
-       *
-       * z-index 20 puts pinned rows above column spacers (0–11) and
-       * expanded overlays (15) but below headers (sticky in their own
-       * grid row, painted later).
-       */}
       {pinnedTopData.length > 0 && (
         <div
           style={{
@@ -996,13 +652,6 @@ const TableBody: React.FC<TableBodyProps> = ({
         </div>
       )}
 
-      {/*
-       * ── Pinned bottom rows ────────────────────────────────────────────
-       * Same wrapper pattern as pinned top rows. The inner sticky div
-       * uses margin-top: auto inside a flex column container to sit at
-       * the bottom of the full-height wrapper, then sticks to the
-       * viewport bottom during scroll.
-       */}
       {pinnedBottomData.length > 0 && (
         <div
           style={{

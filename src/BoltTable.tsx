@@ -43,771 +43,179 @@ import type {
   SortDirection,
 } from './types';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// BoltTable
-//
-// A high-performance, fully-featured React table component built on:
-//   • @tanstack/react-virtual  — row virtualization (only visible rows in DOM)
-//   • @dnd-kit/core + sortable — drag-to-reorder column headers
-//
-// Feature overview:
-//   ┌─────────────────────────────────────────────────────────────────┐
-//   │ Feature                │ Controlled  │ Uncontrolled (default)  │
-//   ├─────────────────────────────────────────────────────────────────┤
-//   │ Column order           │ onColumnOrderChange callback          │
-//   │ Column width           │ onColumnResize callback              │
-//   │ Column pinning         │ onColumnPin callback                 │
-//   │ Column visibility      │ onColumnHide callback                │
-//   │ Sort                   │ onSortChange (server-side)            │
-//   │                        │ local sort (client-side, default)    │
-//   │ Filter                 │ onFilterChange (server-side)          │
-//   │                        │ local filter (client-side, default)  │
-//   │ Pagination             │ onPaginationChange (server-side)      │
-//   │                        │ client-side slice (default)          │
-//   │ Row selection          │ rowSelection.onChange (always)        │
-//   │ Row expansion          │ expandable.expandedRowKeys (opt.)    │
-//   └─────────────────────────────────────────────────────────────────┘
-//
-// Performance notes:
-//   - Only the visible rows are in the DOM at any time (virtualization).
-//   - Row hover is handled via pure DOM attribute mutation — zero React re-renders.
-//   - Column headers use React.memo with custom comparators.
-//   - The selection column renders checkboxes inside Cell (not via column.render)
-//     so toggling one row's selection never re-renders other cells.
-//   - Column widths are stored in a separate state bucket so pagination prop
-//     changes never reset user-adjusted widths.
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Props for the BoltTable component.
- *
- * @typeParam T - The type of a single row record. Must extend `DataRecord`
- *               (i.e. `Record<string, unknown>`). Pass your own interface for
- *               full type safety in column `render`, `sorter`, and `filterFn`.
- *
- * @example
- * interface User {
- *   id: string;
- *   name: string;
- *   email: string;
- *   age: number;
- * }
- *
- * <BoltTable<User>
- *   columns={columns}
- *   data={users}
- *   rowKey="id"
- *   pagination={{ pageSize: 20 }}
- * />
- */
 interface BoltTableProps<T extends DataRecord = DataRecord> {
-  /**
-   * Column definitions array. Controls what columns are shown, their order,
-   * width, pinning, sort/filter behavior, and cell rendering.
-   *
-   * BoltTable watches this array for changes using a content fingerprint
-   * (key + hidden + pinned + width). The internal column state syncs whenever
-   * the fingerprint changes, but sub-pixel width jitter (e.g. percentage widths)
-   * is normalized to avoid unnecessary re-syncs.
-   *
-   * @example
-   * const columns: ColumnType<User>[] = [
-   *   { key: 'name', dataIndex: 'name', title: 'Name', width: 200, sortable: true },
-   *   { key: 'email', dataIndex: 'email', title: 'Email', width: 250 },
-   *   { key: 'age', dataIndex: 'age', title: 'Age', width: 80, sortable: true },
-   * ];
-   */
+  /** Column definitions controlling what columns are shown, their order, width, pinning, sort/filter, and rendering. */
   readonly columns: ColumnType<T>[];
 
-  /**
-   * The row data to display. Each element corresponds to one table row.
-   *
-   * For **client-side** pagination/sort/filter, pass the full dataset.
-   * BoltTable will slice, sort, and filter it internally.
-   *
-   * For **server-side** operations, pass only the current page's data and
-   * provide `onSortChange`, `onFilterChange`, and `onPaginationChange` callbacks
-   * to handle these operations on your server.
-   *
-   * @example
-   * data={users}  // User[]
-   */
+  /** The row data to display. Each element corresponds to one table row. */
   readonly data: T[];
 
-  /**
-   * Height of each regular (non-expanded) row in pixels.
-   * All rows must have the same base height for virtualization to work correctly.
-   *
-   * @default 40
-   *
-   * @example
-   * rowHeight={48}
-   */
+  /** Height of each row in pixels. All rows must have the same base height for virtualization. */
   readonly rowHeight?: number;
 
-  /**
-   * The **estimated** height (in pixels) for expanded row content panels.
-   * Used as the initial size estimate when a row is first expanded, before
-   * the actual content height has been measured by ResizeObserver.
-   * Once measured, the virtualizer updates to the real height.
-   *
-   * Set this close to your typical expanded row height for the smoothest experience.
-   *
-   * @default 200
-   *
-   * @example
-   * expandedRowHeight={300}
-   */
+  /** Estimated height (px) for expanded row content, used before actual measurement. */
   readonly expandedRowHeight?: number;
 
-  /**
-   * Optional maximum height in pixels for expanded row panels.
-   * When the expanded content exceeds this height, the panel becomes scrollable.
-   * When omitted, panels grow to their full content height.
-   *
-   * @example
-   * maxExpandedRowHeight={400}
-   */
+  /** Max height in pixels for expanded row panels. Scrolls when exceeded. */
   readonly maxExpandedRowHeight?: number;
 
-  /**
-   * The primary color used for interactive elements throughout the table:
-   * - Sort direction indicators in column headers
-   * - Active filter icon in column headers
-   * - Column resize overlay line and label
-   * - Selected row background tint (as a transparent overlay)
-   * - Expand/collapse chevron buttons
-   * - Checkbox and radio button accent color
-   * - Highlighted sort/filter options in the context menu
-   * - Page number highlight in the pagination footer
-   *
-   * Accepts any valid CSS color string.
-   *
-   * @default '#1890ff'
-   *
-   * @example
-   * accentColor="#6366f1"   // indigo
-   * accentColor="#10b981"   // emerald
-   * accentColor="hsl(262, 80%, 50%)"
-   */
+  /** Primary color for interactive elements (sort indicators, selected rows, checkboxes, etc.). */
   readonly accentColor?: string;
 
-  /**
-   * Additional CSS class name applied to the outermost wrapper div of BoltTable.
-   * Use this to apply custom sizing, border, or shadow to the table container.
-   *
-   * @example
-   * className="rounded-lg border shadow-sm"
-   */
+  /** Additional CSS class name applied to the outermost wrapper div. */
   readonly className?: string;
 
-  /**
-   * Granular CSS class name overrides for specific parts of the table.
-   * Each key targets a different region of the table.
-   *
-   * @example
-   * classNames={{
-   *   header: 'text-xs uppercase tracking-wider',
-   *   cell: 'text-sm',
-   *   row: 'border-b',
-   *   pinnedHeader: 'bg-blue-50',
-   *   pinnedCell: 'bg-blue-50/50',
-   * }}
-   */
+  /** Granular CSS class name overrides for specific parts of the table. */
   readonly classNames?: ClassNamesTypes;
 
-  /**
-   * Inline style overrides for specific parts of the table.
-   * Applied after all default and className-based styles, so these take
-   * the highest specificity.
-   *
-   * Note: `pinnedBg` is a special string property (not CSSProperties) that
-   * sets the background color of pinned column cells and headers directly.
-   *
-   * @example
-   * styles={{
-   *   header: { fontSize: 12, fontWeight: 600 },
-   *   pinnedBg: 'rgba(239, 246, 255, 0.9)',
-   *   rowHover: { backgroundColor: '#f0f9ff' },
-   *   rowSelected: { backgroundColor: '#dbeafe' },
-   * }}
-   */
+  /** Inline style overrides for specific parts of the table. */
   readonly styles?: StylesTypes;
 
-  /**
-   * A custom React node to use as the drag grip icon in column headers.
-   * When omitted, the default GripVertical SVG icon is used.
-   * Ignored when `hideGripIcon` is `true`.
-   *
-   * @deprecated Use `icons.gripVertical` instead. This prop is kept for backward compatibility.
-   *
-   * @example
-   * gripIcon={<DragHandleIcon style={{ width: 12, height: 12 }} />}
-   */
+  /** @deprecated Use `icons.gripVertical` instead. Custom drag grip icon for column headers. */
   readonly gripIcon?: React.ReactNode;
 
-  /**
-   * Custom icon overrides for the table's built-in icons.
-   * Pass any subset of icons to replace the defaults. Unspecified icons use
-   * the built-in SVG icons. Each icon should be a pre-sized React node.
-   *
-   * @example
-   * icons={{
-   *   gripVertical: <MyGripIcon size={12} />,
-   *   sortAsc: <MySortUpIcon size={12} />,
-   *   chevronsLeft: <MyFirstPageIcon size={12} />,
-   * }}
-   */
+  /** Custom icon overrides for the table's built-in icons. */
   readonly icons?: BoltTableIcons;
 
-  /**
-   * When `true`, the drag grip icon is hidden from all column headers.
-   * Columns can still be dragged even without the grip icon.
-   *
-   * @default false
-   *
-   * @example
-   * hideGripIcon={true}
-   */
+  /** When true, the drag grip icon is hidden from all column headers. */
   readonly hideGripIcon?: boolean;
 
-  /**
-   * Pagination configuration for the footer, or `false` to disable pagination entirely.
-   *
-   * **Client-side pagination** (pass all data, BoltTable slices it):
-   * ```tsx
-   * pagination={{ pageSize: 20 }}
-   * ```
-   *
-   * **Server-side pagination** (pass only current page's data):
-   * ```tsx
-   * pagination={{ current: page, pageSize: 20, total: 500 }}
-   * onPaginationChange={(page, size) => fetchPage(page, size)}
-   * ```
-   *
-   * **Disable pagination:**
-   * ```tsx
-   * pagination={false}
-   * ```
-   *
-   * @default undefined (pagination footer shown with default settings)
-   */
+  /** Pagination configuration for the footer, or false to disable pagination. */
   readonly pagination?: PaginationType | false;
 
-  /**
-   * Called when the user changes the current page or page size via the pagination footer.
-   * Required for server-side pagination. For client-side pagination, this is optional
-   * (BoltTable handles page changes internally).
-   *
-   * @param page     - The new page number (1-based)
-   * @param pageSize - The new page size
-   *
-   * @example
-   * onPaginationChange={(page, size) => {
-   *   setCurrentPage(page);
-   *   setPageSize(size);
-   *   fetchData({ page, size });
-   * }}
-   */
+  /** Called when the user changes the current page or page size via the pagination footer. */
   readonly onPaginationChange?: (page: number, pageSize: number) => void;
 
-  /**
-   * Called when the user finishes resizing a column (on mouse up).
-   * Use this to persist the new width to your state or storage.
-   *
-   * @param columnKey - The `key` of the resized column
-   * @param newWidth  - The new column width in pixels
-   *
-   * @example
-   * onColumnResize={(key, width) => {
-   *   setColumnWidths(prev => ({ ...prev, [key]: width }));
-   * }}
-   */
+  /** Called when the user finishes resizing a column (on mouse up). */
   readonly onColumnResize?: (columnKey: string, newWidth: number) => void;
 
-  /**
-   * Called after the user drops a column header into a new position.
-   * Receives the full new column key order.
-   * Use this to persist the order to your state or storage.
-   *
-   * @param newOrder - Array of all column keys in their new order
-   *
-   * @example
-   * onColumnOrderChange={(order) => {
-   *   setColumnOrder(order);
-   * }}
-   */
+  /** Called after the user drops a column header into a new position. */
   readonly onColumnOrderChange?: (newOrder: string[]) => void;
 
-  /**
-   * Called when the user pins or unpins a column via the context menu.
-   *
-   * @param columnKey - The `key` of the column whose pin state changed
-   * @param pinned    - The new pin state: `'left'`, `'right'`, or `false`
-   *
-   * @example
-   * onColumnPin={(key, pinned) => {
-   *   setColumns(prev => prev.map(col =>
-   *     col.key === key ? { ...col, pinned } : col
-   *   ));
-   * }}
-   */
+  /** Called when the user pins or unpins a column via the context menu. */
   readonly onColumnPin?: (
     columnKey: string,
     pinned: 'left' | 'right' | false,
   ) => void;
 
-  /**
-   * Called when the user hides or shows a column via the context menu.
-   * Note: pinned columns cannot be hidden.
-   *
-   * @param columnKey - The `key` of the column whose visibility changed
-   * @param hidden    - `true` if the column is now hidden, `false` if now visible
-   *
-   * @example
-   * onColumnHide={(key, hidden) => {
-   *   setColumns(prev => prev.map(col =>
-   *     col.key === key ? { ...col, hidden } : col
-   *   ));
-   * }}
-   */
+  /** Called when the user hides or shows a column via the context menu. */
   readonly onColumnHide?: (columnKey: string, hidden: boolean) => void;
 
-  /**
-   * Determines the unique key for each row. Used for selection, expansion,
-   * and stable virtualizer item keys.
-   *
-   * Can be:
-   * - A **string**: the name of a property on the row object (e.g. `'id'`)
-   * - A **function**: `(record) => string` for computed keys
-   * - A **number** or **symbol**: property access by index/symbol
-   *
-   * Always returns a string internally (numbers/symbols are coerced to string).
-   *
-   * @default 'id'
-   *
-   * @example
-   * rowKey="id"
-   * rowKey={(record) => `${record.type}-${record.id}`}
-   */
+  /** Determines the unique key for each row. Can be a string property name, function, number, or symbol. */
   readonly rowKey?: string | ((record: T) => string) | number | symbol;
 
-  /**
-   * Row selection configuration. When provided, prepends a checkbox (or radio)
-   * column to the left of the table.
-   *
-   * BoltTable does not manage selection state internally — you must track
-   * `selectedRowKeys` in your own state and update it in `onChange`.
-   *
-   * @example
-   * rowSelection={{
-   *   type: 'checkbox',
-   *   selectedRowKeys,
-   *   onChange: (keys) => setSelectedRowKeys(keys),
-   * }}
-   */
+  /** Row selection configuration. Prepends a checkbox/radio column when provided. */
   expandable?: ExpandableConfig<T>;
 
-  /**
-   * Expandable row configuration. When provided, prepends an expand toggle
-   * column to the left of the table (to the right of the selection column
-   * if both are used).
-   *
-   * Supports both controlled (`expandedRowKeys`) and uncontrolled modes.
-   *
-   * @example
-   * expandable={{
-   *   rowExpandable: (record) => record.hasDetails,
-   *   expandedRowRender: (record) => <DetailPanel record={record} />,
-   * }}
-   */
+  /** Expandable row configuration. Prepends an expand toggle column when provided. */
   readonly rowSelection?: RowSelectionConfig<T>;
 
-  /**
-   * Row pinning configuration. When provided, the specified rows are rendered
-   * as sticky rows at the top and/or bottom of the table body.
-   *
-   * Pinned rows transcend pagination — they are always visible regardless of
-   * which page the user is on. Filtering still applies.
-   *
-   * @example
-   * rowPinning={{ top: ['row-1', 'row-3'], bottom: ['row-10'] }}
-   */
+  /** Row pinning configuration. Specified rows render as sticky at top and/or bottom. */
   readonly rowPinning?: RowPinningConfig;
 
-  /**
-   * Called when the user pins or unpins a row via the cell right-click context menu.
-   * Update your `rowPinning` state in this callback.
-   *
-   * @param rowKey - The key of the row whose pin state changed
-   * @param pinned - `'top'`, `'bottom'`, or `false` (unpinned)
-   *
-   * @example
-   * onRowPin={(key, pinned) => {
-   *   setRowPinning(prev => {
-   *     const top = (prev.top ?? []).filter(k => String(k) !== String(key));
-   *     const bottom = (prev.bottom ?? []).filter(k => String(k) !== String(key));
-   *     if (pinned === 'top') top.push(key);
-   *     if (pinned === 'bottom') bottom.push(key);
-   *     return { top, bottom };
-   *   });
-   * }}
-   */
+  /** Called when the user pins or unpins a row via the cell context menu. */
   readonly onRowPin?: (
     rowKey: React.Key,
     pinned: 'top' | 'bottom' | false,
   ) => void;
 
-  /**
-   * Called when the user scrolls near the bottom of the table.
-   * Use this for infinite scroll / load-more behavior.
-   * Fires when the last visible row is within `onEndReachedThreshold` rows of the end.
-   *
-   * A debounce guard prevents this from firing repeatedly — it resets automatically
-   * when `data.length` changes or when `isLoading` flips back to `false`.
-   *
-   * @example
-   * onEndReached={() => {
-   *   if (!isLoading) fetchNextPage();
-   * }}
-   */
+  /** Called when the user scrolls near the bottom of the table. Use for infinite scroll. */
   readonly onEndReached?: () => void;
 
-  /**
-   * How many rows from the end of the list should trigger `onEndReached`.
-   * A higher value triggers loading earlier (more buffer); lower means later.
-   *
-   * @default 5
-   *
-   * @example
-   * onEndReachedThreshold={10}
-   */
+  /** How many rows from the end of the list should trigger onEndReached. */
   readonly onEndReachedThreshold?: number;
 
-  /**
-   * When `true` and `data` is empty, the table renders animated shimmer
-   * skeleton rows instead of the empty state or real data.
-   *
-   * When `true` and `data` is non-empty (e.g. loading the next page in
-   * infinite scroll), a small number of shimmer rows are appended at the
-   * bottom below the real data.
-   *
-   * @default false
-   *
-   * @example
-   * isLoading={isFetching}
-   */
+  /** When true and data is empty, shows shimmer skeleton rows. With data, appends shimmer rows at bottom. */
   readonly isLoading?: boolean;
 
-  /**
-   * Scroll indicator configuration (reserved for future use).
-   * Currently unused but accepted to avoid prop-drilling issues in parent components.
-   */
+  /** Scroll indicator configuration (reserved for future use). */
   readonly scrollIndicators?: { vertical?: boolean; horizontal?: boolean };
 
-  /**
-   * Called when the user changes the sort direction via the column header context menu.
-   *
-   * **Server-side sorting**: provide this callback. BoltTable will NOT sort the
-   * data locally — it will pass the event to you and display the data as-is.
-   *
-   * **Client-side sorting** (default): omit this callback. BoltTable will sort
-   * the data locally using `column.sorter` or a default comparator.
-   *
-   * @param columnKey - The `key` of the column being sorted
-   * @param direction - The new sort direction, or `null` to clear the sort
-   *
-   * @example
-   * // Server-side
-   * onSortChange={(key, dir) => {
-   *   setSortKey(key);
-   *   setSortDir(dir);
-   *   refetch({ sortKey: key, sortDir: dir });
-   * }}
-   */
+  /** Called when the user changes sort direction. Provide for server-side sorting. */
   readonly onSortChange?: (columnKey: string, direction: SortDirection) => void;
 
-  /**
-   * Called when the user applies or clears a column filter via the context menu.
-   *
-   * **Server-side filtering**: provide this callback. BoltTable will NOT filter
-   * the data locally — it passes the full filters map to you.
-   *
-   * **Client-side filtering** (default): omit this callback. BoltTable will filter
-   * locally using `column.filterFn` or a default case-insensitive substring match.
-   *
-   * @param filters - A map of `{ [columnKey]: filterValue }` for all active filters.
-   *                  A column is removed from the map when its filter is cleared.
-   *
-   * @example
-   * // Server-side
-   * onFilterChange={(filters) => {
-   *   setActiveFilters(filters);
-   *   refetch({ filters });
-   * }}
-   */
+  /** Called when the user applies or clears a column filter. Provide for server-side filtering. */
   readonly onFilterChange?: (filters: Record<string, string>) => void;
 
-  /**
-   * Custom items to append to the bottom of the right-click context menu
-   * that appears on column headers. These appear after the built-in
-   * sort / filter / pin / hide options.
-   *
-   * @example
-   * columnContextMenuItems={[
-   *   {
-   *     key: 'copy-col',
-   *     label: 'Copy column data',
-   *     icon: <CopyIcon className="h-3 w-3" />,
-   *     onClick: (columnKey) => copyColumnToClipboard(columnKey),
-   *   },
-   * ]}
-   */
+  /** Custom items to append to the column header right-click context menu. */
   readonly columnContextMenuItems?: ColumnContextMenuItem[];
 
-  /**
-   * Controls how the table's height is determined.
-   *
-   * - `true` (default): the table **auto-sizes** to its content, up to a maximum
-   *   of 10 rows. Shorter tables occupy less vertical space. The container uses
-   *   `maxHeight` so a smaller flex parent can still clip it.
-   *
-   * - `false`: the table fills its parent container (`height: 100%`). The parent
-   *   is fully responsible for providing a height. Use this when BoltTable is
-   *   placed inside a fixed-height container (e.g. a modal, a resizable panel).
-   *
-   * @default true
-   *
-   * @example
-   * // Table inside a fixed-height panel
-   * autoHeight={false}
-   */
+  /** Controls table height. True: auto-sizes to content (max 10 rows). False: fills parent container. */
   readonly autoHeight?: boolean;
 
-  /**
-   * When `true`, renders a full shimmer skeleton layout (including column headers)
-   * before the table's column widths have been calculated from real data.
-   *
-   * Use this for the initial page load when you don't yet know the column widths
-   * but want to show a realistic skeleton immediately.
-   *
-   * Differs from `isLoading`:
-   * - `layoutLoading=true` → entire grid (headers + rows) is a skeleton
-   * - `isLoading=true` → headers are real, only body rows are skeletons
-   *
-   * @default false
-   *
-   * @example
-   * layoutLoading={!columnsResolved}
-   */
+  /** When true, renders a full shimmer skeleton layout before column widths are calculated. */
   readonly layoutLoading?: boolean;
 
-  /**
-   * Custom React node to render when the table has no data and is not loading.
-   * Replaces the default "No data" message.
-   * The empty state is centered in the visible viewport (sticky left + fixed width)
-   * so it always appears centered even when the table is scrolled horizontally.
-   *
-   * @example
-   * emptyRenderer={
-   *   <div className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
-   *     <SearchX className="h-8 w-8" />
-   *     <p>No results found</p>
-   *   </div>
-   * }
-   */
+  /** Custom React node to render when the table has no data and is not loading. */
   readonly emptyRenderer?: React.ReactNode;
 }
 
-/**
- * CSS class name overrides for specific regions of BoltTable.
- * All fields are optional — omit any you don't need to customize.
- *
- * @example
- * const classNames: ClassNamesTypes = {
- *   header: 'text-xs font-semibold uppercase text-gray-500',
- *   cell: 'text-sm text-gray-900',
- *   pinnedHeader: 'bg-blue-50 border-r border-blue-200',
- *   pinnedCell: 'bg-blue-50/50',
- * };
- */
 export interface ClassNamesTypes {
-  /**
-   * Applied to all non-pinned column header cells.
-   * Pinned headers also receive `pinnedHeader` on top of this.
-   */
+  /** Applied to all non-pinned column header cells. */
   header?: string;
 
-  /** Applied to all body cells (both pinned and non-pinned) */
+  /** Applied to all body cells (both pinned and non-pinned). */
   cell?: string;
 
-  /** Applied to each row's wrapper element (reserved for future use) */
+  /** Applied to each row's wrapper element. */
   row?: string;
 
-  /**
-   * Applied to the floating drag overlay header shown while dragging a column.
-   * Use this to style the "ghost" column that follows the cursor.
-   */
+  /** Applied to the floating drag overlay header while dragging a column. */
   dragHeader?: string;
 
-  /**
-   * Applied additionally to pinned column header cells (on top of `header`).
-   * Use this to add a border, background, or shadow to distinguish pinned headers.
-   */
+  /** Applied additionally to pinned column header cells. */
   pinnedHeader?: string;
 
-  /**
-   * Applied additionally to pinned column body cells.
-   * Use this to add a border or separator between pinned and scrolling columns.
-   */
+  /** Applied additionally to pinned column body cells. */
   pinnedCell?: string;
 
-  /**
-   * Applied to the expanded row content panel (the div below an expanded row).
-   * Does not affect the row itself, only the expanded panel.
-   */
+  /** Applied to the expanded row content panel. */
   expandedRow?: string;
 
-  /**
-   * Applied to each pinned row's wrapper div (the grid row containing all cells).
-   * Use this to add a border, background, or separator for pinned rows.
-   */
+  /** Applied to each pinned row's wrapper div. */
   pinnedRow?: string;
 }
 
-/**
- * Inline style overrides for specific regions of BoltTable.
- * Applied after all default styles, so these take the highest specificity.
- *
- * All fields accept standard React `CSSProperties` except `pinnedBg`,
- * which accepts a CSS color string directly.
- *
- * @example
- * const styles: StylesTypes = {
- *   header: { fontSize: 12, letterSpacing: '0.05em' },
- *   rowHover: { backgroundColor: '#f8fafc' },
- *   rowSelected: { backgroundColor: '#eff6ff' },
- *   pinnedBg: 'rgba(239, 246, 255, 0.95)',
- * };
- */
 export interface StylesTypes {
-  /** Inline styles for all non-pinned column header cells */
+  /** Inline styles for all non-pinned column header cells. */
   header?: CSSProperties;
 
-  /** Inline styles for all body cells */
+  /** Inline styles for all body cells. */
   cell?: CSSProperties;
 
-  /** Inline styles for each row wrapper (reserved for future use) */
+  /** Inline styles for each row wrapper. */
   row?: CSSProperties;
 
-  /**
-   * Inline styles for the drag overlay header shown while dragging a column.
-   * Applied on top of `header` styles.
-   */
+  /** Inline styles for the drag overlay header. */
   dragHeader?: CSSProperties;
 
-  /**
-   * Inline styles for pinned column header cells.
-   * Applied on top of `header` styles.
-   */
+  /** Inline styles for pinned column header cells. */
   pinnedHeader?: CSSProperties;
 
-  /**
-   * Inline styles for pinned column body cells.
-   * Applied on top of `cell` styles.
-   */
+  /** Inline styles for pinned column body cells. */
   pinnedCell?: CSSProperties;
 
-  /** Inline styles for the expanded row content panel */
+  /** Inline styles for the expanded row content panel. */
   expandedRow?: CSSProperties;
 
-  /** Inline styles for pinned row wrappers (the grid row containing all cells) */
+  /** Inline styles for pinned row wrappers. */
   pinnedRow?: CSSProperties;
 
-  /**
-   * CSS color string for the background of pinned row cells.
-   * Should be opaque so that scrolling content behind pinned rows is hidden.
-   * Falls back to `pinnedBg` if not set.
-   *
-   * @example
-   * pinnedRowBg: 'rgba(255, 255, 255, 0.98)'
-   */
+  /** CSS color string for pinned row cell backgrounds. Falls back to pinnedBg. */
   pinnedRowBg?: string;
 
-  /**
-   * CSS color string applied as the background of hovered rows.
-   * Defaults to `hsl(var(--muted) / 0.5)` if omitted.
-   *
-   * @example
-   * rowHover: { backgroundColor: '#f8fafc' }
-   */
+  /** Styles applied to hovered rows. */
   rowHover?: CSSProperties;
 
-  /**
-   * CSS color string applied as the background tint of selected rows.
-   * Defaults to `${accentColor}15` (accentColor at 8% opacity).
-   *
-   * @example
-   * rowSelected: { backgroundColor: '#dbeafe' }
-   */
+  /** Styles applied to selected rows. */
   rowSelected?: CSSProperties;
 
-  /**
-   * CSS color string for the background of pinned column cells and headers.
-   * Accepts any valid CSS color. Defaults to a semi-transparent white/dark
-   * based on the current theme.
-   *
-   * @example
-   * pinnedBg: 'rgba(239, 246, 255, 0.9)'
-   */
+  /** CSS color string for pinned column cells and headers background. */
   pinnedBg?: string;
 }
 
-/**
- * Shimmer bar widths (%) used for the layout-loading skeleton.
- * Cycled deterministically per (rowIndex × 7 + colIndex) so different cells
- * show different widths without randomness (no hydration mismatches in SSR).
- */
 const SHIMMER_WIDTHS = [55, 70, 45, 80, 60, 50, 75, 65, 40, 72];
 
-/**
- * BoltTable — high-performance virtualized React table.
- *
- * Renders only the rows currently visible in the viewport using TanStack Virtual,
- * making it suitable for datasets of any size without performance degradation.
- *
- * @typeParam T - Your row data type. Must extend `DataRecord` (i.e. `Record<string, unknown>`).
- *
- * @example
- * // Minimal usage
- * <BoltTable
- *   columns={[
- *     { key: 'name', dataIndex: 'name', title: 'Name' },
- *     { key: 'email', dataIndex: 'email', title: 'Email' },
- *   ]}
- *   data={users}
- * />
- *
- * @example
- * // Full-featured server-side example
- * <BoltTable<User>
- *   columns={columns}
- *   data={pageData}
- *   rowKey="id"
- *   isLoading={isFetching}
- *   pagination={{ current: page, pageSize: 20, total: totalCount }}
- *   onPaginationChange={(p, size) => fetchPage(p, size)}
- *   onSortChange={(key, dir) => refetch({ sortKey: key, sortDir: dir })}
- *   onFilterChange={(filters) => refetch({ filters })}
- *   rowSelection={{ selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys) }}
- *   expandable={{
- *     rowExpandable: (r) => r.hasDetails,
- *     expandedRowRender: (r) => <DetailPanel record={r} />,
- *   }}
- *   accentColor="#6366f1"
- *   autoHeight={false}
- * />
- */
 export default function BoltTable<T extends DataRecord = DataRecord>({
   columns: initialColumns,
   data,
@@ -842,27 +250,13 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   layoutLoading,
   emptyRenderer,
 }: BoltTableProps<T>) {
-  // ─── Internal column state ─────────────────────────────────────────────────
-  // BoltTable maintains its own copy of columns so it can track user-driven
-  // changes (pinning, hiding) without mutating the parent's array.
   const [columns, setColumns] = useState<ColumnType<T>[]>(initialColumns);
   const [columnOrder, setColumnOrder] = useState<string[]>(() =>
     initialColumns.map((c) => c.key),
   );
 
-  // The key being dragged (null when not dragging)
   const [activeId, setActiveId] = useState<string | null>(null);
 
-  // ─── Sync columns from parent ──────────────────────────────────────────────
-  // Uses a content fingerprint to detect real changes vs noise:
-  //   - key:    column identity
-  //   - hidden: visibility state
-  //   - pinned: pin state
-  //   - width:  rounded to integer to ignore sub-pixel jitter
-  //
-  // IMPORTANT: the fingerprint comparison happens inside a useEffect, not during
-  // render, to avoid "Cannot update a component while rendering a different
-  // component" errors when the parent re-renders with a new array reference.
   const columnsFingerprintRef = useRef('');
   const newFingerprint = initialColumns
     .map((c) => {
@@ -872,8 +266,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     })
     .join('|');
 
-  // Stable ref so the effect always reads the latest initialColumns
-  // without adding it to the dependency array
   const initialColumnsRef = useRef(initialColumns);
   initialColumnsRef.current = initialColumns;
 
@@ -884,21 +276,14 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     setColumnOrder(initialColumnsRef.current.map((c) => c.key));
   }, [newFingerprint]);
 
-  // ─── Persisted column widths ───────────────────────────────────────────────
-  // Stored in a separate state bucket so pagination prop changes (which cause
-  // BoltTable to re-render with a new `pagination` object) never reset widths
-  // that the user has manually adjusted.
   const safeWidth = (w: unknown, fallback = 150): number =>
     typeof w === 'number' && Number.isFinite(w) ? w : fallback;
 
   const [columnWidths, setColumnWidths] = useState<Map<string, number>>(
     () => new Map(),
   );
-  // Tracks which columns have been manually resized (used to prevent auto-width
-  // recalculations from overriding user-set widths in future enhancements)
   const manuallyResizedRef = useRef<Set<string>>(new Set());
 
-  // Merge persisted widths into columns — keeps widths stable across re-renders
   const columnsWithPersistedWidths = useMemo(
     () =>
       columns.map((col) => ({
@@ -908,8 +293,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     [columns, columnWidths],
   );
 
-  // ─── Expandable state ──────────────────────────────────────────────────────
-  // Supports both controlled (expandedRowKeys from parent) and uncontrolled modes.
   const [internalExpandedKeys, setInternalExpandedKeys] = useState<
     Set<React.Key>
   >(() => {
@@ -926,8 +309,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     return new Set(expandable?.defaultExpandedRowKeys ?? []);
   });
 
-  // Use a string fingerprint of the controlled keys to avoid Set reference
-  // inequality causing unnecessary re-renders on every render
   const expandedKeysFingerprint = expandable?.expandedRowKeys
     ?.map(String)
     .join('|');
@@ -941,12 +322,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   const expandableRef = useRef(expandable);
   expandableRef.current = expandable;
 
-  /**
-   * Toggles the expanded state of a row.
-   * Works in both controlled and uncontrolled modes:
-   * - Controlled: derives new set from prop, calls onExpandedRowsChange
-   * - Uncontrolled: updates internal state, calls onExpandedRowsChange
-   */
   const toggleExpand = useCallback((key: React.Key) => {
     const exp = expandableRef.current;
     if (exp?.expandedRowKeys !== undefined) {
@@ -963,9 +338,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     }
   }, []);
 
-  // ─── getRowKey ─────────────────────────────────────────────────────────────
-  // Always returns a string. Normalizing to string means all key comparisons
-  // are string-vs-string regardless of whether parent stores numbers or strings.
   const getRowKey = useCallback(
     (record: T, index: number): string => {
       if (typeof rowKey === 'function') return String(rowKey(record));
@@ -978,18 +350,11 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     [rowKey],
   );
 
-  // ─── Normalized selected keys ──────────────────────────────────────────────
-  // Pre-normalized to strings once here so Cell never has to deal with
-  // mixed number/string comparisons in its includes() checks.
   const normalizedSelectedKeys = useMemo<string[]>(
     () => (rowSelection?.selectedRowKeys ?? []).map((k) => String(k)),
     [rowSelection?.selectedRowKeys],
   );
 
-  // ─── Inject expand column ─────────────────────────────────────────────────
-  // Prepends a synthetic '__expand__' column with a render function that shows
-  // the chevron toggle button. This approach keeps the expand logic centralized
-  // in BoltTable rather than scattered across TableBody.
   const columnsWithExpand = useMemo(() => {
     if (!expandable?.rowExpandable) return columnsWithPersistedWidths;
 
@@ -1008,7 +373,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
         if (!canExpand)
           return <span style={{ display: 'inline-block', width: 16 }} />;
 
-        // Allow custom expand icons via expandable.expandIcon
         if (typeof (expandable as any).expandIcon === 'function') {
           return (expandable as { expandIcon?: (args: any) => React.ReactNode })
             .expandIcon!({
@@ -1057,11 +421,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     accentColor,
   ]);
 
-  // ─── Inject selection column ───────────────────────────────────────────────
-  // The render function here is intentionally a no-op placeholder.
-  // TableBody's Cell component handles the actual checkbox rendering for
-  // __select__ cells using normalizedSelectedKeys passed as direct props.
-  // This means selection changes never cause this memo or its siblings to re-run.
   const columnsWithSelection = useMemo(() => {
     if (!rowSelection) return columnsWithExpand;
 
@@ -1078,32 +437,14 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     return [selectionColumn, ...columnsWithExpand];
   }, [rowSelection, columnsWithExpand]);
 
-  // ─── DOM refs ──────────────────────────────────────────────────────────────
   const resizeOverlayRef = useRef<ResizeOverlayHandle>(null);
   const tableAreaRef = useRef<HTMLDivElement>(null);
   const [scrollAreaWidth, setScrollAreaWidth] = useState<number>(0);
 
-  // ─── Scroll container width tracking ──────────────────────────────────────
-  // Rules to prevent infinite loops:
-  //   1. Only track WIDTH (never height — height changes cause DOM changes → loop).
-  //   2. Guard with prevWidth ref — setState only fires when value actually changed.
-  //   3. Debounce via requestAnimationFrame so multiple ResizeObserver entries
-  //      in the same frame collapse into one setState call.
-  //   4. Use a callback ref (not useLayoutEffect([])) so the observer re-attaches
-  //      whenever the div mounts/unmounts (layoutLoading ternary swaps the element).
   const prevScrollAreaWidthRef = useRef<number>(0);
   const roRef = useRef<ResizeObserver | null>(null);
   const rafRef = useRef<number | null>(null);
 
-  /**
-   * Callback ref for the scroll container div.
-   * Attaches a ResizeObserver to track the container's width for:
-   * - Sizing the empty state panel to the visible viewport width
-   * - Sizing expanded row panels to the visible viewport width
-   *
-   * Also keeps `tableAreaRef.current` in sync for all existing code
-   * that reads it (virtualizer, scroll listeners, resize overlay).
-   */
   const tableAreaCallbackRef = useCallback((el: HTMLDivElement | null) => {
     roRef.current?.disconnect();
     roRef.current = null;
@@ -1136,11 +477,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     roRef.current = ro;
   }, []);
 
-  // ─── Row hover (zero re-renders — pure DOM) ────────────────────────────────
-  // Hover state is tracked via DOM attribute mutation (`data-hover`) instead of
-  // React state. This means hovering over rows never causes any React re-renders.
-  // The CSS injected in the JSX below targets `[data-row-key][data-hover] > div`
-  // to apply the hover background across all column divs for the same row.
   const hoveredRowRef = useRef<string | null>(null);
 
   React.useEffect(() => {
@@ -1149,14 +485,12 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
 
     const setHover = (key: string | null) => {
       if (hoveredRowRef.current === key) return;
-      // Remove data-hover from the previously hovered row's cells
       if (hoveredRowRef.current) {
         el.querySelectorAll(
           `[data-row-key="${hoveredRowRef.current}"]`,
         ).forEach((n) => (n as HTMLElement).removeAttribute('data-hover'));
       }
       hoveredRowRef.current = key;
-      // Add data-hover to all cells with the new hovered row key
       if (key) {
         el.querySelectorAll(`[data-row-key="${key}"]`).forEach((n) =>
           (n as HTMLElement).setAttribute('data-hover', ''),
@@ -1180,10 +514,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     };
   }, []);
 
-  // ─── Column resize state ───────────────────────────────────────────────────
-  // Stored in a ref (not state) because resize tracking happens on mousemove
-  // and must not trigger re-renders during the drag. React state is only
-  // updated on mouseup (handleResizeEnd) when the final width is committed.
   const resizeStateRef = useRef<{
     columnKey: string;
     startX: number;
@@ -1192,9 +522,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     currentX: number;
   } | null>(null);
 
-  // ─── Custom column drag-and-drop ────────────────────────────────────────────
-  // Zero-dependency DnD: uses native pointer events, DOM attributes for visual
-  // state (zero re-renders during drag), and a portal ghost element.
   const overIdRef = useRef<string | null>(null);
   const dragActiveIdRef = useRef<string | null>(null);
   const ghostRef = useRef<HTMLDivElement>(null);
@@ -1308,11 +635,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     [],
   );
 
-  /**
-   * Called on mousedown of a column's resize handle.
-   * Captures the start position and initial width, then shows the ResizeOverlay.
-   * Pinned columns and system columns (__select__, __expand__) cannot be resized.
-   */
   const handleResizeStart = (columnKey: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1335,7 +657,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
       currentX: e.clientX,
     };
 
-    // Show the resize overlay (vertical line + label)
     if (tableAreaRef.current) {
       const headerElement = tableAreaRef.current.querySelector(
         `[data-column-key="${columnKey}"]`,
@@ -1353,7 +674,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
           typeof column.title === 'string' ? column.title : String(column.key),
           areaRect,
           headerLeftInContent,
-          40, // minimum column width
+          40,
           scrollTop,
           scrollLeft,
           headerLeftInContent + startWidth,
@@ -1365,20 +686,12 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     document.addEventListener('mouseup', handleResizeEnd);
   };
 
-  /**
-   * Called on every mousemove during a column resize drag.
-   * Updates the overlay line position via direct DOM mutation (no React state).
-   */
   const handleResizeMove = (e: MouseEvent) => {
     if (!resizeStateRef.current) return;
     resizeStateRef.current.currentX = e.clientX;
     resizeOverlayRef.current?.move(e.clientX);
   };
 
-  /**
-   * Called on mouseup to commit the new column width.
-   * Updates column widths state, notifies the parent, and hides the overlay.
-   */
   const handleResizeEnd = React.useCallback(() => {
     if (!resizeStateRef.current) return;
     const { startX, startWidth, currentX, columnKey } = resizeStateRef.current;
@@ -1402,10 +715,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     onColumnResize?.(columnKey, finalWidth);
   }, [onColumnResize]);
 
-  // ─── Column ordering & pinning ─────────────────────────────────────────────
-  // Computes three groups: leftPinned, unpinned, rightPinned.
-  // System columns (__select__, __expand__) are always prepended before the
-  // user's column order, regardless of where they appear in columnOrder.
   const { leftPinned, unpinned, rightPinned } = useMemo(() => {
     const columnMap = new Map(columnsWithSelection.map((c) => [c.key, c]));
     const systemKeys = [
@@ -1428,18 +737,11 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     return { leftPinned: left, unpinned: center, rightPinned: right };
   }, [columnOrder, columnsWithSelection, rowSelection, expandable]);
 
-  // Final ordered columns: left pinned → center → right pinned
   const orderedColumns = useMemo(
     () => [...leftPinned, ...unpinned, ...rightPinned],
     [leftPinned, unpinned, rightPinned],
   );
 
-  // Overlay the latest render/functional props from the parent's columns onto
-  // orderedColumns. The internal `columns` state only syncs on structural
-  // fingerprint changes (key/pinned/hidden/width), so render function closures
-  // captured at initialization become stale when the parent re-renders with
-  // updated state. Reading from `initialColumnsRef.current` (updated every
-  // render) ensures Cell always calls the freshest render function.
   const freshOrderedColumns = useMemo(() => {
     const latestMap = new Map(
       initialColumnsRef.current.map((c) => [c.key, c]),
@@ -1459,14 +761,9 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
         shimmerRender: latest.shimmerRender,
       };
     });
-    // initialColumns is intentionally read via ref, not a dependency.
-    // This memo recomputes when orderedColumns changes (structural changes),
-    // but also produces fresh render fns on every call because the ref is
-    // always current. The useMemo here deduplicates when nothing changed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderedColumns, initialColumns]);
 
-  // Total pixel width of all columns (used for minWidth on the grid)
   const totalTableWidth = useMemo(
     () =>
       orderedColumns
@@ -1476,7 +773,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     [orderedColumns],
   );
 
-  // CSS gridTemplateColumns string — last column uses minmax() to stretch
   const gridTemplateColumns = useMemo(() => {
     if (orderedColumns.length === 0) return '';
     return orderedColumns
@@ -1489,7 +785,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
       .join(' ');
   }, [orderedColumns]);
 
-  // Pixel offsets for pinned columns (left offset for left-pinned, right offset for right-pinned)
   const columnOffsets = useMemo(() => {
     const offsets = new Map<string, number>();
     let lo = 0;
@@ -1506,9 +801,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     return offsets;
   }, [leftPinned, rightPinned]);
 
-  /**
-   * Updates a column's pinned state in internal column state and notifies parent.
-   */
   const handleTogglePin = (
     columnKey: string,
     pinned: 'left' | 'right' | false,
@@ -1519,10 +811,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     onColumnPin?.(columnKey, pinned);
   };
 
-  /**
-   * Toggles a column's hidden state. Pinned columns cannot be hidden.
-   * Notifies parent via onColumnHide.
-   */
   const handleToggleHide = (columnKey: string) => {
     setColumns((prev) =>
       prev.map((col) => {
@@ -1534,9 +822,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     if (column && !column.pinned) onColumnHide?.(columnKey, !column.hidden);
   };
 
-  // ─── Sorting ───────────────────────────────────────────────────────────────
-  // When onSortChange is provided → server-side: delegate to parent, no local sort.
-  // When undefined → client-side: sort locally inside BoltTable.
   const onSortChangeRef = useRef(onSortChange);
   onSortChangeRef.current = onSortChange;
 
@@ -1545,12 +830,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     direction: SortDirection;
   }>({ key: '', direction: null });
 
-  /**
-   * Handles a sort request from a column header context menu.
-   *
-   * Toggle cycle (no explicit direction): unsorted → asc → desc → unsorted
-   * Explicit direction: sets that direction, or clears it if already active.
-   */
   const handleSort = useCallback(
     (columnKey: string, direction?: SortDirection) => {
       setSortState((prev) => {
@@ -1578,18 +857,10 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     [],
   );
 
-  // ─── Column filters ────────────────────────────────────────────────────────
-  // When onFilterChange is provided → server-side: delegate to parent, no local filter.
-  // When undefined → client-side: filter locally inside BoltTable.
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>(
     {},
   );
 
-  /**
-   * Applies a filter value to a column.
-   * Removes the key from the filters map when value is empty (cleared).
-   * Notifies parent via onFilterChange with the full updated filters map.
-   */
   const handleColumnFilter = useCallback(
     (columnKey: string, value: string) => {
       setColumnFilters((prev) => {
@@ -1603,10 +874,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     [onFilterChange],
   );
 
-  /**
-   * Clears the filter for a specific column.
-   * Convenience wrapper around handleColumnFilter.
-   */
   const handleClearFilter = useCallback(
     (columnKey: string) => {
       handleColumnFilter(columnKey, '');
@@ -1614,8 +881,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     [handleColumnFilter],
   );
 
-  // ─── Local sort + filter ───────────────────────────────────────────────────
-  // Only applies when the corresponding server-side callback is NOT provided.
   const onFilterChangeRef = useRef(onFilterChange);
   onFilterChangeRef.current = onFilterChange;
   const columnsLookupRef = useRef(initialColumns);
@@ -1624,7 +889,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   const processedData = useMemo(() => {
     let result = data;
 
-    // Client-side filter (skipped when onFilterChange is provided)
     if (!onFilterChangeRef.current) {
       const filterKeys = Object.keys(columnFilters);
       if (filterKeys.length > 0) {
@@ -1634,7 +898,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
             if (typeof col?.filterFn === 'function') {
               return col.filterFn(columnFilters[key], row, col.dataIndex);
             }
-            // Default: case-insensitive substring match
             const cellVal = String(row[key] ?? '').toLowerCase();
             return cellVal.includes(columnFilters[key].toLowerCase());
           }),
@@ -1642,7 +905,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
       }
     }
 
-    // Client-side sort (skipped when onSortChange is provided)
     if (!onSortChangeRef.current && sortState.key && sortState.direction) {
       const dir = sortState.direction === 'asc' ? 1 : -1;
       const key = sortState.key;
@@ -1668,10 +930,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     return result;
   }, [data, sortState, columnFilters]);
 
-  // ─── Row pinning — split pinned rows from processed data ──────────────────
-  // Pinned rows are extracted before pagination so they are always visible
-  // regardless of which page the user is on. The unpinned remainder goes
-  // through the normal pagination pipeline.
   const { pinnedTopRows, pinnedBottomRows, unpinnedProcessedData } =
     useMemo(() => {
       if (
@@ -1699,7 +957,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
         else rest.push(row as T);
       });
 
-      // Maintain the order specified in the pinning config
       const orderedTop = (rowPinning.top ?? [])
         .map((k) => topMap.get(String(k)))
         .filter((r): r is T => r !== undefined);
@@ -1718,7 +975,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   const pinnedTopHeight = pinnedTopRows.length * rowHeight;
   const pinnedBottomHeight = pinnedBottomRows.length * rowHeight;
 
-  // Pre-computed key sets for fast "is this row pinned?" checks in the cell context menu
   const pinnedTopKeySet = useMemo(
     () => new Set((rowPinning?.top ?? []).map(String)),
     [rowPinning?.top],
@@ -1728,7 +984,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     [rowPinning?.bottom],
   );
 
-  // ─── Cell context menu ────────────────────────────────────────────────────
   const [cellContextMenu, setCellContextMenu] = useState<{
     x: number;
     y: number;
@@ -1738,7 +993,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
 
   const cellMenuRef = useRef<HTMLDivElement>(null);
 
-  // Long-press support for mobile (cell context menu)
   const cellLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -1752,7 +1006,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     cellTouchStart.current = null;
   }, []);
 
-  // Close the cell context menu on click-outside or Escape
   React.useEffect(() => {
     if (!cellContextMenu) return;
     const close = (e: MouseEvent) => {
@@ -1774,9 +1027,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     };
   }, [cellContextMenu]);
 
-  // ─── Scroll to top when filters change ────────────────────────────────────
-  // Prevents the user from being stuck on page 3 after narrowing the filter
-  // results to only 1 page.
   const columnFiltersKey = Object.keys(columnFilters)
     .sort()
     .map((k) => `${k}:${columnFilters[k]}`)
@@ -1785,11 +1035,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     tableAreaRef.current?.scrollTo({ top: 0 });
   }, [columnFiltersKey]);
 
-  // ─── Client-side pagination ────────────────────────────────────────────────
-  // When the parent passes ALL data and pagination is enabled, BoltTable
-  // slices to the current page. Server-side paginated data (already one page)
-  // passes through unmodified since data.length <= pageSize in that case.
-  // Note: pinned rows are excluded — they are always visible above/below.
   const pgEnabled = pagination !== false && !!pagination;
   const pgSize = pgEnabled ? (pagination.pageSize ?? 10) : 10;
   const pgCurrent = pgEnabled ? Number(pagination.current ?? 1) : 1;
@@ -1802,8 +1047,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     return unpinnedProcessedData.slice(start, start + pgSize);
   }, [unpinnedProcessedData, needsClientPagination, pgCurrent, pgSize]);
 
-  // ─── Shimmer data ──────────────────────────────────────────────────────────
-  // Full-screen shimmer: data is empty AND isLoading=true
   const shimmerCount = pgEnabled ? pgSize : 15;
   const showShimmer = isLoading && processedData.length === 0;
   const shimmerData = useMemo(() => {
@@ -1817,8 +1060,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     );
   }, [showShimmer, shimmerCount, rowKey]);
 
-  // ─── Infinite scroll shimmer ───────────────────────────────────────────────
-  // Appends shimmer rows below real data while loading the next page
   const INFINITE_SHIMMER_COUNT = 5;
   const infiniteLoadingShimmer = useMemo(() => {
     if (!isLoading || paginatedData.length === 0 || showShimmer) return null;
@@ -1832,7 +1073,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     );
   }, [isLoading, paginatedData.length, showShimmer, pgEnabled, rowKey]);
 
-  // Final data handed to the virtualizer
   const displayData = useMemo(() => {
     if (shimmerData) return shimmerData;
     if (infiniteLoadingShimmer)
@@ -1840,19 +1080,10 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     return paginatedData;
   }, [shimmerData, infiniteLoadingShimmer, paginatedData]);
 
-  // ─── Expanded row height measurement ──────────────────────────────────────
-  // Cache of measured content heights keyed by row key.
-  // Updated by MeasuredExpandedRow via onExpandedRowResize.
   const measuredExpandedHeights = useRef<Map<string, number>>(new Map());
 
-  // Debounce RAF ref — collapses rapid ResizeObserver callbacks into one virtualizer.measure()
   const expandedRowMeasureRafRef = useRef<number | null>(null);
 
-  /**
-   * Called by MeasuredExpandedRow when an expanded row's content height changes.
-   * Updates the cached height and triggers a virtualizer re-measure.
-   * Debounced via requestAnimationFrame to batch rapid resize events.
-   */
   const handleExpandedRowResize = useCallback(
     (rk: string, contentHeight: number) => {
       const prev = measuredExpandedHeights.current.get(rk);
@@ -1870,9 +1101,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     [],
   );
 
-  // ─── Virtualizer ───────────────────────────────────────────────────────────
-  // paddingStart/paddingEnd reserve space for pinned rows so the virtual items
-  // never overlap with the sticky pinned row overlays.
   const rowVirtualizer = useVirtualizer({
     count: displayData.length,
     getScrollElement: () => tableAreaRef.current,
@@ -1895,9 +1123,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   const rowVirtualizerRef = useRef(rowVirtualizer);
   rowVirtualizerRef.current = rowVirtualizer;
 
-  // Re-measure virtualizer when expanded keys change.
-  // Uses a string fingerprint to avoid re-measuring when the Set reference
-  // changes but the contents are identical.
   const resolvedExpandedKeysFingerprint = Array.from(resolvedExpandedKeys)
     .sort()
     .join(',');
@@ -1906,17 +1131,12 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolvedExpandedKeysFingerprint]);
 
-  // ─── Infinite scroll / end-reach detection ────────────────────────────────
-  // Fires onEndReached when the last visible row is within threshold rows of the end.
   const endReachedFiredRef = useRef(false);
   const onEndReachedRef = useRef(onEndReached);
   onEndReachedRef.current = onEndReached;
   const isLoadingRef = useRef(isLoading);
   isLoadingRef.current = isLoading;
 
-  // Reset the end-reached guard when new data arrives or loading finishes.
-  // The 200ms delay gives the table time to re-render with new data before
-  // allowing onEndReached to fire again.
   React.useEffect(() => {
     const timer = setTimeout(() => {
       endReachedFiredRef.current = false;
@@ -1951,12 +1171,10 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayData.length, onEndReachedThreshold]);
 
-  // The column currently being dragged (used to render the DragOverlay)
   const activeColumn = activeId
     ? orderedColumns.find((col) => col.key === activeId)
     : null;
 
-  // ─── Pagination values ─────────────────────────────────────────────────────
   const currentPage = pgCurrent;
   const pageSize = pgSize;
 
@@ -1965,8 +1183,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
       (needsClientPagination ? unpinnedProcessedData.length : data.length))
     : data.length;
 
-  // Freeze the last known good total while loading to prevent "Showing 1-0 of 0"
-  // flicker on every API call.
   const lastKnownTotalRef = useRef<number>(0);
   if (!isLoading || rawTotal > 0) {
     lastKnownTotalRef.current = rawTotal;
@@ -1983,21 +1199,12 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   };
   const handlePageSizeChange = (s: number) => onPaginationChange?.(1, s);
 
-  // Scroll to top when page changes in client-side pagination
   React.useEffect(() => {
     if (needsClientPagination) {
       tableAreaRef.current?.scrollTo({ top: 0 });
     }
   }, [pgCurrent, needsClientPagination]);
 
-  /**
-   * Computes the page numbers to show in the pagination footer.
-   * Uses two distinct ellipsis string literals ('ellipsis-left', 'ellipsis-right')
-   * so React never sees duplicate keys when both ellipses appear simultaneously.
-   *
-   * For ≤ 7 total pages, shows all page numbers.
-   * For > 7 pages, shows: [1, ..., currentPage-1, currentPage, currentPage+1, ..., last]
-   */
   const getPageNumbers = (): (
     | number
     | 'ellipsis-left'
@@ -2030,11 +1237,6 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
     ];
   };
 
-  // ─── Height calculation ────────────────────────────────────────────────────
-  // autoHeight=true  → grows to fit rows, capped at MAX_AUTO_ROWS.
-  //                    Uses maxHeight (not height) so a smaller parent
-  //                    can still constrain it.
-  // autoHeight=false → fills parent container via flex-1 / h-full.
   const HEADER_HEIGHT = 36;
   const MAX_AUTO_ROWS = 10;
   const virtualTotalSize = rowVirtualizer.getTotalSize();
@@ -2058,15 +1260,6 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
           ...(autoHeight ? { maxHeight: '100%' } : { height: '100%' }),
         }}
       >
-        {/*
-         * ── Injected CSS for hover/selection ──────────────────────────────
-         * Row hover and selection backgrounds are handled via pure CSS attribute
-         * selectors targeting data-hover and data-selected attributes.
-         * This means no React re-renders occur during hover or selection changes.
-         *
-         * [data-row-key][data-hover] > div    → hover background
-         * [data-row-key][data-selected] > div → selected background
-         */}
         <style>{`
           @keyframes bt-pulse {
             0%, 100% { opacity: 1; }
@@ -2098,14 +1291,6 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
           }
         `}</style>
 
-        {/*
-         * ── Scroll wrapper ───────────────────────────────────────────────
-         * autoHeight=true:
-         *   height + maxHeight = clampedAutoHeight snaps wrapper to content
-         *   flexShrink=1 allows a smaller flex parent to shrink it
-         * autoHeight=false:
-         *   flex-1 fills remaining parent height (parent must have a height)
-         */}
         <div
           style={{
             position: 'relative',
@@ -2120,12 +1305,6 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
           }}
         >
           {layoutLoading ? (
-            /*
-             * ── Layout loading skeleton ──────────────────────────────────
-             * Shown when layoutLoading=true. Renders real column headers
-             * (based on orderedColumns) alongside shimmer body rows.
-             * Used for initial page load when column widths are not yet known.
-             */
             <div
               style={{
                 position: 'absolute',
@@ -2238,12 +1417,6 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
               </div>
             </div>
           ) : (
-            /*
-             * ── Main scroll container ────────────────────────────────────
-             * absolute inset-0 so it fills whatever height the wrapper resolves to.
-             * contain: layout paint — browser optimization hint that this element
-             * is a layout and paint boundary (improves compositing performance).
-             */
             <div
               ref={tableAreaCallbackRef}
               style={{
@@ -2253,17 +1426,8 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                 contain: 'layout paint',
               }}
             >
-              {/* Resize overlay — positioned inside scroll container so it scrolls with content */}
               <ResizeOverlay ref={resizeOverlayRef} accentColor={accentColor} />
 
-              {/*
-               * ── CSS Grid ─────────────────────────────────────────────
-               * Row 1 (36px): sticky column headers
-               * Row 2 (1fr):  table body (fills remaining space)
-               *
-               * The 1fr row lets the empty-state div use height:100% without
-               * any JS measurement — it works in both autoHeight and flex modes.
-               */}
               <div
                 style={{
                   display: 'grid',
@@ -2339,9 +1503,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                 onTouchEnd={cancelCellLongPress}
                 onTouchCancel={cancelCellLongPress}
               >
-                {/* ── Column headers ─────────────────────────────────── */}
                   {orderedColumns.map((column, visualIndex) => {
-                    // Selection column header — custom render with "select all" checkbox
                     if (column.key === '__select__' && rowSelection) {
                       return (
                         <div
@@ -2366,7 +1528,6 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                             ...styles.pinnedHeader,
                           }}
                         >
-                          {/* "Select all" checkbox — hidden in radio mode or when hideSelectAll=true */}
                           {rowSelection.type !== 'radio' &&
                             !rowSelection.hideSelectAll && (
                               <input
@@ -2377,7 +1538,6 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                                 }
                                 ref={(input) => {
                                   if (input) {
-                                    // Indeterminate state: some (not all) rows are selected
                                     input.indeterminate =
                                       normalizedSelectedKeys.length > 0 &&
                                       normalizedSelectedKeys.length <
@@ -2438,7 +1598,6 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                       );
                     }
 
-                    // Regular column header — drag/sort/filter/resize/context-menu
                     return (
                       <DraggableHeader
                         key={column.key}
@@ -2471,15 +1630,6 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                   })}
 
                 {isEmpty ? (
-                  /*
-                   * ── Empty state ────────────────────────────────────────
-                   * col-span-full + height:100% fills the 1fr body grid row.
-                   *
-                   * The inner div uses `position: sticky; left: 0` with a fixed
-                   * width (scrollAreaWidth) to viewport-lock the empty state panel.
-                   * Without this, the empty message would scroll horizontally
-                   * with the grid content when there are many columns.
-                   */
                   <div
                     style={{
                       gridColumn: '1 / -1',
@@ -2517,7 +1667,6 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                     </div>
                   </div>
                 ) : (
-                  /* ── Virtualized table body ─────────────────────────── */
                   <TableBody
                     data={displayData as DataRecord[]}
                     orderedColumns={freshOrderedColumns as ColumnType<DataRecord>[]}
@@ -2563,10 +1712,6 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
           )}
         </div>
 
-        {/* ── Pagination footer ──────────────────────────────────────────────
-         * Only rendered when pagination !== false.
-         * Shows: [range info] [page buttons] [page size selector]
-         */}
         {pagination !== false && (
           <div
             style={{
@@ -2777,7 +1922,6 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
         )}
       </div>
 
-      {/* ── Drag ghost overlay ──────────────────────────────────────────────── */}
       {typeof document !== 'undefined' &&
         createPortal(
           <div
@@ -2844,7 +1988,6 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
           document.body,
         )}
 
-      {/* ── Cell context menu (right-click on body cells) ──────────────────── */}
       {cellContextMenu &&
         typeof document !== 'undefined' &&
         (() => {
@@ -2858,7 +2001,6 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
           const hasCopy = menuCol?.copy;
           const hasRowPin = !!onRowPin;
 
-          // Look up the record for the copy action
           let menuRecord: T | undefined;
           let menuRowIndex = 0;
           const allRows = [

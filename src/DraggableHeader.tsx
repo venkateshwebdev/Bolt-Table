@@ -22,228 +22,57 @@ import type {
   SortDirection,
 } from './types';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DraggableHeader
-//
-// Renders a single column header cell with the following capabilities:
-//   • Drag-to-reorder  — powered by @dnd-kit/sortable (disabled for pinned columns)
-//   • Column resize    — exposes a right-edge handle that calls onResizeStart
-//   • Sort indicators  — shows ArrowUpAZ / ArrowDownAZ when sorted
-//   • Filter indicator — shows a small Filter icon when a filter is active
-//   • Context menu     — right-click reveals sort/filter/pin/hide actions
-//                        plus any custom items from columnContextMenuItems
-//   • Unpin button     — shown in place of the resize handle for pinned columns
-//
-// Performance: wrapped in React.memo with a custom comparator so headers only
-// re-render when their own column's props actually change. A sort change on
-// column A never causes column B to re-render.
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Props for the DraggableHeader component.
- * This is an internal component used by BoltTable — all props are passed
- * automatically and you do not need to use DraggableHeader directly.
- */
 interface DraggableHeaderProps {
-  /**
-   * The column definition for this header cell.
-   * Controls width, pinning, sort/filter capabilities, title, and styling.
-   */
+  /** Column definition for this header cell. */
   column: ColumnType<DataRecord>;
-
-  /**
-   * The visual position index of this column in the ordered column array.
-   * Used to set the CSS `grid-column` placement so headers align with body cells.
-   */
+  /** Visual position index in the ordered column array. */
   visualIndex: number;
-
-  /**
-   * The accent color used for sort indicators, filter icons, the active sort
-   * highlight in the context menu, and the resize handle hover line.
-   *
-   * @default '#1890ff'
-   */
+  /** Accent color for indicators and highlights. */
   accentColor?: string;
-
-  /**
-   * Called when the user presses down on the resize handle at the right edge
-   * of this header cell. Starts the resize drag operation in BoltTable.
-   */
+  /** Called when the user starts resizing this column. */
   onResizeStart?: (columnKey: string, event: React.MouseEvent) => void;
-
-  /**
-   * Called when the user starts dragging this column header to reorder.
-   * BoltTable handles the full drag lifecycle from this point.
-   */
+  /** Called when the user starts dragging this column header. */
   onColumnDragStart?: (columnKey: string, event: React.PointerEvent) => void;
-
-  /**
-   * Shared styling overrides for header cells.
-   * `styles.header` applies to all headers; `styles.pinnedHeader` applies
-   * additionally to pinned column headers.
-   */
+  /** Shared styling overrides for header cells. */
   styles?: StylesTypes;
-
-  /**
-   * Shared CSS class name overrides for header cells.
-   * `classNames.header` applies to all headers; `classNames.pinnedHeader`
-   * applies additionally to pinned column headers.
-   */
+  /** Shared CSS class name overrides for header cells. */
   classNames?: ClassNamesTypes;
-
-  /**
-   * When `true`, the drag grip icon on the left of the header label is hidden.
-   * The column can still be dragged; only the visual indicator is removed.
-   *
-   * @default false
-   */
+  /** When true, the drag grip icon is hidden. */
   hideGripIcon?: boolean;
-
-  /**
-   * A custom React node to use as the drag grip icon.
-   * When omitted, the default `GripVertical` icon is used.
-   *
-   * @example
-   * gripIcon={<MyCustomDragIcon />}
-   */
+  /** Custom React node to use as the drag grip icon. */
   gripIcon?: React.ReactNode;
-
-  /**
-   * The pixel offset from the pinned edge (left or right) for this column.
-   * Used to set `left` or `right` CSS on sticky-positioned pinned headers.
-   * Calculated by BoltTable based on the total width of all preceding pinned columns.
-   */
+  /** Pixel offset from the pinned edge for sticky positioning. */
   stickyOffset?: number;
-
-  /**
-   * Called when the user pins or unpins this column via the context menu
-   * or the unpin button shown on pinned headers.
-   *
-   * @param columnKey - The key of the column being toggled
-   * @param pinned    - The new pinned state: `'left'`, `'right'`, or `false` (unpinned)
-   */
+  /** Called when the user pins or unpins this column. */
   onTogglePin?: (columnKey: string, pinned: 'left' | 'right' | false) => void;
-
-  /**
-   * Called when the user clicks "Hide Column" in the context menu.
-   * The column's `hidden` property will be toggled in BoltTable's state.
-   * Pinned columns cannot be hidden and this will never be called for them.
-   *
-   * @param columnKey - The key of the column being hidden
-   */
+  /** Called when the user hides this column via the context menu. */
   onToggleHide?: (columnKey: string) => void;
-
-  /**
-   * Whether this is the rightmost visible column.
-   * When `true`, the header cell uses `width: 100%` instead of a fixed pixel
-   * width so it stretches to fill any remaining horizontal space.
-   *
-   * @default false
-   */
+  /** Whether this is the rightmost visible column. */
   isLastColumn?: boolean;
-
-  /**
-   * The current sort direction applied to this column.
-   * - `'asc'`  — column is sorted ascending (ArrowUpAZ icon shown)
-   * - `'desc'` — column is sorted descending (ArrowDownAZ icon shown)
-   * - `null`   — column is not currently sorted (no icon shown)
-   *
-   * Passed from BoltTable's sort state; only set for the currently sorted column.
-   */
+  /** Current sort direction applied to this column. */
   sortDirection?: SortDirection;
-
-  /**
-   * Called when the user clicks a sort option in the context menu.
-   *
-   * @param columnKey - The key of the column to sort
-   * @param direction - The requested sort direction (`'asc'`, `'desc'`, or `undefined` to toggle)
-   */
+  /** Called when the user clicks a sort option in the context menu. */
   onSort?: (columnKey: string, direction?: SortDirection) => void;
-
-  /**
-   * The current filter value active on this column.
-   * When non-empty, a small Filter icon is shown in the header label.
-   *
-   * @default ''
-   */
+  /** Current filter value active on this column. */
   filterValue?: string;
-
-  /**
-   * Called when the user submits a new filter value via the context menu input.
-   *
-   * @param columnKey - The key of the column being filtered
-   * @param value     - The filter string entered by the user
-   */
+  /** Called when the user submits a filter value via the context menu. */
   onFilter?: (columnKey: string, value: string) => void;
-
-  /**
-   * Called when the user clicks "Clear Filter" in the context menu.
-   *
-   * @param columnKey - The key of the column whose filter should be cleared
-   */
+  /** Called when the user clears the filter via the context menu. */
   onClearFilter?: (columnKey: string) => void;
-
-  /**
-   * Additional custom items to append at the bottom of the right-click context menu.
-   * These appear after the built-in sort/filter/pin/hide options.
-   *
-   * @example
-   * customContextMenuItems={[
-   *   {
-   *     key: 'copy',
-   *     label: 'Copy column data',
-   *     icon: <CopyIcon />,
-   *     onClick: (columnKey) => copyColumn(columnKey),
-   *   }
-   * ]}
-   */
+  /** Additional custom items for the right-click context menu. */
   customContextMenuItems?: ColumnContextMenuItem[];
-
-  /**
-   * Custom icon overrides from BoltTable's `icons` prop.
-   * Passed through automatically — do not set manually.
-   */
+  /** Custom icon overrides from BoltTable's icons prop. */
   icons?: BoltTableIcons;
 }
 
-/**
- * Returns `true` if the column should show sort UI (ascending/descending).
- * Columns are sortable by default; set `column.sortable = false` to disable.
- *
- * @param col - The column definition to check
- */
 function isColumnSortable(col: ColumnType<DataRecord>): boolean {
   return col.sortable !== false;
 }
 
-/**
- * Returns `true` if the column should show a filter input in the context menu.
- * Columns are filterable by default; set `column.filterable = false` to disable.
- *
- * @param col - The column definition to check
- */
 function isColumnFilterable(col: ColumnType<DataRecord>): boolean {
   return col.filterable !== false;
 }
 
-/**
- * DraggableHeader — a single column header cell for BoltTable.
- *
- * Features:
- * - **Drag to reorder**: grip icon on the left; dragging is disabled for pinned columns.
- * - **Resize handle**: a 12px wide invisible hit area on the right edge.
- * - **Sort indicators**: ArrowUpAZ / ArrowDownAZ shown when sorted.
- * - **Filter indicator**: small Filter icon when a filter is active.
- * - **Right-click context menu**: sort asc/desc, filter input, pin left/right, hide column,
- *   plus any custom items passed via `customContextMenuItems`.
- * - **Unpin button**: replaces the resize handle on pinned columns.
- *
- * Wrapped in `React.memo` with a custom equality check — only re-renders when
- * its own column's data changes, preventing cascade re-renders across all headers
- * when a single column's sort/filter/width changes.
- *
- * @internal This is an internal BoltTable component. Use BoltTable directly.
- */
 const DraggableHeader = React.memo(
   ({
     column,
@@ -280,7 +109,6 @@ const DraggableHeader = React.memo(
     const filterInputRef = useRef<HTMLInputElement>(null);
     const menuRef = useRef<HTMLDivElement>(null);
 
-    // ── Close context menu when clicking outside it ─────────────────────────
     useEffect(() => {
       const handleClickOutside = (e: MouseEvent) => {
         if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
@@ -294,10 +122,6 @@ const DraggableHeader = React.memo(
       }
     }, [contextMenu]);
 
-    /**
-     * Opens the context menu, clamping position to stay within viewport.
-     * Shared by the right-click handler and the mobile long-press handler.
-     */
     const showContextMenuAt = (clientX: number, clientY: number) => {
       const menuWidth = 160;
       const menuHeight = 180;
@@ -316,7 +140,6 @@ const DraggableHeader = React.memo(
       showContextMenuAt(e.clientX, e.clientY);
     };
 
-    // ── Long-press support for mobile ─────────────────────────────────────
     const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
       null,
     );
@@ -348,14 +171,9 @@ const DraggableHeader = React.memo(
       if (Math.abs(dx) > 10 || Math.abs(dy) > 10) cancelLongPress();
     };
 
-    /**
-     * Forwards the resize start event to BoltTable.
-     * Pinned columns cannot be resized — the event is swallowed silently.
-     */
     const handleResizeStart = (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      // Pinned columns cannot be resized
       if (column.pinned) return;
       onResizeStart?.(column.key, e);
     };
@@ -500,11 +318,6 @@ const DraggableHeader = React.memo(
             </div>
           </div>
 
-          {/*
-           * ── Unpin button (pinned columns only) ─────────────────────────
-           * Replaces the resize handle for pinned columns. Clicking unpins
-           * the column and restores it to its original position in the flow.
-           */}
           {isPinned && (
             <button
               style={{
@@ -566,12 +379,6 @@ const DraggableHeader = React.memo(
           )}
         </div>
 
-        {/*
-         * ── Context menu (right-click) ─────────────────────────────────────
-         * Rendered as a portal at document.body so it's never clipped by the
-         * table's overflow:hidden containers.
-         * Sections: Sort | Filter | Pin | Hide | Custom items
-         */}
         {contextMenu &&
           typeof document !== 'undefined' &&
           createPortal(
@@ -898,9 +705,6 @@ const DraggableHeader = React.memo(
       </>
     );
   },
-  // ── Custom memo comparator ─────────────────────────────────────────────────
-  // Only re-render when props that actually affect this header's output change.
-  // This prevents a sort/filter change on one column from re-rendering all others.
   (prevProps, nextProps) => {
     return (
       prevProps.column.width === nextProps.column.width &&
