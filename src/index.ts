@@ -10,5 +10,6 @@ export type {
   PaginationType,
   SortDirection,
   DataRecord,
+  RowPinningConfig,
 } from './types';
 export type { BoltTableIcons } from './icons';

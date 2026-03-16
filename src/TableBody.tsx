@@ -184,6 +184,32 @@ interface TableBodyProps {
    * maxExpandedRowHeight={300}
    */
   maxExpandedRowHeight?: number;
+
+  /**
+   * Rows pinned to the top of the table body.
+   * Rendered as non-virtualized sticky rows below the column headers.
+   */
+  pinnedTopData?: DataRecord[];
+
+  /**
+   * Rows pinned to the bottom of the table body.
+   * Rendered as non-virtualized sticky rows at the bottom of the visible area.
+   */
+  pinnedBottomData?: DataRecord[];
+
+  /**
+   * The CSS `gridTemplateColumns` string matching the parent grid.
+   * Needed for pinned row sub-grids to align with the main column layout.
+   */
+  gridTemplateColumns?: string;
+
+  /**
+   * Height of the column header row in pixels.
+   * Used to position the sticky top pinned rows below the headers.
+   *
+   * @default 36
+   */
+  headerHeight?: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -581,15 +607,31 @@ const TableBody: React.FC<TableBodyProps> = ({
   expandable,
   resolvedExpandedKeys,
   rowHeight = 40,
+  totalTableWidth,
   scrollAreaWidth,
   accentColor,
   isLoading = false,
   onExpandedRowResize,
   maxExpandedRowHeight,
+  pinnedTopData = [],
+  pinnedBottomData = [],
+  gridTemplateColumns,
+  headerHeight = 36,
 }) => {
   const virtualItems = rowVirtualizer.getVirtualItems();
   const totalSize = rowVirtualizer.getTotalSize();
   const selectedKeySet = useMemo(() => new Set(normalizedSelectedKeys), [normalizedSelectedKeys]);
+
+  // Combined data for selection callbacks (includes pinned rows so
+  // toggling a checkbox in a pinned row can derive all selected rows)
+  const allDataForSelection = useMemo(() => {
+    if (pinnedTopData.length === 0 && pinnedBottomData.length === 0)
+      return data;
+    return [...pinnedTopData, ...data, ...pinnedBottomData];
+  }, [pinnedTopData, data, pinnedBottomData]);
+
+  const pinnedRowBg =
+    (styles as any)?.pinnedRowBg ?? (styles as any)?.pinnedBg;
 
   /**
    * Pre-computed styles for each column's spacer div.
@@ -711,7 +753,7 @@ const TableBody: React.FC<TableBodyProps> = ({
                       rowSelection={rowSelection}
                       normalizedSelectedKeys={normalizedSelectedKeys}
                       rowKey={rowKey}
-                      allData={data}
+                      allData={allDataForSelection}
                       getRowKey={getRowKey}
                       accentColor={accentColor}
                       isLoading={isRowShimmer}
@@ -816,6 +858,230 @@ const TableBody: React.FC<TableBodyProps> = ({
                 ) : (
                   expandedContent
                 )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/*
+       * ── Pinned top rows ───────────────────────────────────────────────
+       * Non-virtualized sticky rows rendered below the column headers.
+       * Each row is a sub-grid matching the parent column template so
+       * cells align with the main body columns. Column pinning (sticky
+       * left/right) is replicated within each row.
+       *
+       * z-index 20 puts pinned rows above column spacers (0–11) and
+       * expanded overlays (15) but below headers (sticky in their own
+       * grid row, painted later).
+       */}
+      {pinnedTopData.length > 0 && (
+        <div
+          style={{
+            gridColumn: '1 / -1',
+            gridRow: 2,
+            position: 'sticky',
+            top: headerHeight,
+            zIndex: 20,
+            boxShadow: '0 2px 6px -1px rgba(0,0,0,0.08)',
+          }}
+        >
+          {pinnedTopData.map((row, rowIdx) => {
+            const rk = getRowKey
+              ? getRowKey(row, rowIdx)
+              : String(rowIdx);
+            const isSelected = selectedKeySet.has(rk);
+            const isExpanded = resolvedExpandedKeys?.has(rk) ?? false;
+
+            return (
+              <div
+                key={`pinned-top-${rk}`}
+                className={classNames?.pinnedRow ?? ''}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: gridTemplateColumns ?? '',
+                  minWidth: totalTableWidth
+                    ? `${totalTableWidth}px`
+                    : undefined,
+                  ...styles?.pinnedRow,
+                }}
+              >
+                {orderedColumns.map((col) => {
+                  const cellValue = row[col.dataIndex];
+                  const stickyOffset = columnOffsets.get(col.key);
+                  const isPinned = Boolean(col.pinned);
+                  let zIndex = 0;
+                  if (
+                    col.key === '__select__' ||
+                    col.key === '__expand__'
+                  )
+                    zIndex = 11;
+                  else if (isPinned) zIndex = 2;
+
+                  const recordFingerprint = col.render
+                    ? JSON.stringify(row)
+                    : undefined;
+
+                  return (
+                    <div
+                      key={col.key}
+                      data-row-key={rk}
+                      data-selected={isSelected || undefined}
+                      style={{
+                        position: isPinned ? 'sticky' : 'relative',
+                        ...(col.pinned === 'left' &&
+                        stickyOffset !== undefined
+                          ? { left: `${stickyOffset}px` }
+                          : {}),
+                        ...(col.pinned === 'right' &&
+                        stickyOffset !== undefined
+                          ? { right: `${stickyOffset}px` }
+                          : {}),
+                        zIndex,
+                        backgroundColor: pinnedRowBg,
+                        ...(isPinned && styles?.pinnedCell
+                          ? styles.pinnedCell
+                          : {}),
+                      }}
+                    >
+                      <div
+                        style={{
+                          height: `${rowHeight}px`,
+                          position: 'relative',
+                        }}
+                      >
+                        <Cell
+                          value={cellValue}
+                          record={row}
+                          column={col}
+                          rowIndex={rowIdx}
+                          classNames={classNames}
+                          styles={styles}
+                          isSelected={isSelected}
+                          isExpanded={isExpanded}
+                          rowSelection={rowSelection}
+                          normalizedSelectedKeys={normalizedSelectedKeys}
+                          rowKey={rk}
+                          allData={allDataForSelection}
+                          getRowKey={getRowKey}
+                          accentColor={accentColor}
+                          isLoading={false}
+                          recordFingerprint={recordFingerprint}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/*
+       * ── Pinned bottom rows ────────────────────────────────────────────
+       * Same structure as pinned top rows but sticky to the bottom.
+       * alignSelf: 'end' places the element at the bottom of the grid row
+       * so the sticky bottom offset works correctly during scroll.
+       */}
+      {pinnedBottomData.length > 0 && (
+        <div
+          style={{
+            gridColumn: '1 / -1',
+            gridRow: 2,
+            position: 'sticky',
+            bottom: 0,
+            alignSelf: 'end',
+            zIndex: 20,
+            boxShadow: '0 -2px 6px -1px rgba(0,0,0,0.08)',
+          }}
+        >
+          {pinnedBottomData.map((row, rowIdx) => {
+            const rk = getRowKey
+              ? getRowKey(row, rowIdx)
+              : String(rowIdx);
+            const isSelected = selectedKeySet.has(rk);
+            const isExpanded = resolvedExpandedKeys?.has(rk) ?? false;
+
+            return (
+              <div
+                key={`pinned-bottom-${rk}`}
+                className={classNames?.pinnedRow ?? ''}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: gridTemplateColumns ?? '',
+                  minWidth: totalTableWidth
+                    ? `${totalTableWidth}px`
+                    : undefined,
+                  ...styles?.pinnedRow,
+                }}
+              >
+                {orderedColumns.map((col) => {
+                  const cellValue = row[col.dataIndex];
+                  const stickyOffset = columnOffsets.get(col.key);
+                  const isPinned = Boolean(col.pinned);
+                  let zIndex = 0;
+                  if (
+                    col.key === '__select__' ||
+                    col.key === '__expand__'
+                  )
+                    zIndex = 11;
+                  else if (isPinned) zIndex = 2;
+
+                  const recordFingerprint = col.render
+                    ? JSON.stringify(row)
+                    : undefined;
+
+                  return (
+                    <div
+                      key={col.key}
+                      data-row-key={rk}
+                      data-selected={isSelected || undefined}
+                      style={{
+                        position: isPinned ? 'sticky' : 'relative',
+                        ...(col.pinned === 'left' &&
+                        stickyOffset !== undefined
+                          ? { left: `${stickyOffset}px` }
+                          : {}),
+                        ...(col.pinned === 'right' &&
+                        stickyOffset !== undefined
+                          ? { right: `${stickyOffset}px` }
+                          : {}),
+                        zIndex,
+                        backgroundColor: pinnedRowBg,
+                        ...(isPinned && styles?.pinnedCell
+                          ? styles.pinnedCell
+                          : {}),
+                      }}
+                    >
+                      <div
+                        style={{
+                          height: `${rowHeight}px`,
+                          position: 'relative',
+                        }}
+                      >
+                        <Cell
+                          value={cellValue}
+                          record={row}
+                          column={col}
+                          rowIndex={rowIdx}
+                          classNames={classNames}
+                          styles={styles}
+                          isSelected={isSelected}
+                          isExpanded={isExpanded}
+                          rowSelection={rowSelection}
+                          normalizedSelectedKeys={normalizedSelectedKeys}
+                          rowKey={rk}
+                          allData={allDataForSelection}
+                          getRowKey={getRowKey}
+                          accentColor={accentColor}
+                          isLoading={false}
+                          recordFingerprint={recordFingerprint}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             );
           })}

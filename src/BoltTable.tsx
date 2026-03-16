@@ -35,6 +35,7 @@ import type {
   DataRecord,
   ExpandableConfig,
   PaginationType,
+  RowPinningConfig,
   RowSelectionConfig,
   SortDirection,
 } from './types';
@@ -420,6 +421,18 @@ interface BoltTableProps<T extends DataRecord = DataRecord> {
   readonly rowSelection?: RowSelectionConfig<T>;
 
   /**
+   * Row pinning configuration. When provided, the specified rows are rendered
+   * as sticky rows at the top and/or bottom of the table body.
+   *
+   * Pinned rows transcend pagination — they are always visible regardless of
+   * which page the user is on. Filtering still applies.
+   *
+   * @example
+   * rowPinning={{ top: ['row-1', 'row-3'], bottom: ['row-10'] }}
+   */
+  readonly rowPinning?: RowPinningConfig;
+
+  /**
    * Called when the user scrolls near the bottom of the table.
    * Use this for infinite scroll / load-more behavior.
    * Fires when the last visible row is within `onEndReachedThreshold` rows of the end.
@@ -628,6 +641,12 @@ export interface ClassNamesTypes {
    * Does not affect the row itself, only the expanded panel.
    */
   expandedRow?: string;
+
+  /**
+   * Applied to each pinned row's wrapper div (the grid row containing all cells).
+   * Use this to add a border, background, or separator for pinned rows.
+   */
+  pinnedRow?: string;
 }
 
 /**
@@ -675,6 +694,19 @@ export interface StylesTypes {
 
   /** Inline styles for the expanded row content panel */
   expandedRow?: CSSProperties;
+
+  /** Inline styles for pinned row wrappers (the grid row containing all cells) */
+  pinnedRow?: CSSProperties;
+
+  /**
+   * CSS color string for the background of pinned row cells.
+   * Should be opaque so that scrolling content behind pinned rows is hidden.
+   * Falls back to `pinnedBg` if not set.
+   *
+   * @example
+   * pinnedRowBg: 'rgba(255, 255, 255, 0.98)'
+   */
+  pinnedRowBg?: string;
 
   /**
    * CSS color string applied as the background of hovered rows.
@@ -770,6 +802,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   onColumnPin,
   onColumnHide,
   rowSelection,
+  rowPinning,
   expandable,
   rowKey = 'id',
   onEndReached,
@@ -1608,6 +1641,56 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     return result;
   }, [data, sortState, columnFilters]);
 
+  // ─── Row pinning — split pinned rows from processed data ──────────────────
+  // Pinned rows are extracted before pagination so they are always visible
+  // regardless of which page the user is on. The unpinned remainder goes
+  // through the normal pagination pipeline.
+  const { pinnedTopRows, pinnedBottomRows, unpinnedProcessedData } =
+    useMemo(() => {
+      if (
+        !rowPinning ||
+        (!rowPinning.top?.length && !rowPinning.bottom?.length)
+      ) {
+        return {
+          pinnedTopRows: [] as T[],
+          pinnedBottomRows: [] as T[],
+          unpinnedProcessedData: processedData,
+        };
+      }
+
+      const topKeySet = new Set((rowPinning.top ?? []).map(String));
+      const bottomKeySet = new Set((rowPinning.bottom ?? []).map(String));
+
+      const topMap = new Map<string, T>();
+      const bottomMap = new Map<string, T>();
+      const rest: T[] = [];
+
+      processedData.forEach((row, idx) => {
+        const key = getRowKey(row as T, idx);
+        if (topKeySet.has(key)) topMap.set(key, row as T);
+        else if (bottomKeySet.has(key)) bottomMap.set(key, row as T);
+        else rest.push(row as T);
+      });
+
+      // Maintain the order specified in the pinning config
+      const orderedTop = (rowPinning.top ?? [])
+        .map((k) => topMap.get(String(k)))
+        .filter((r): r is T => r !== undefined);
+
+      const orderedBottom = (rowPinning.bottom ?? [])
+        .map((k) => bottomMap.get(String(k)))
+        .filter((r): r is T => r !== undefined);
+
+      return {
+        pinnedTopRows: orderedTop,
+        pinnedBottomRows: orderedBottom,
+        unpinnedProcessedData: rest,
+      };
+    }, [processedData, rowPinning, getRowKey]);
+
+  const pinnedTopHeight = pinnedTopRows.length * rowHeight;
+  const pinnedBottomHeight = pinnedBottomRows.length * rowHeight;
+
   // ─── Scroll to top when filters change ────────────────────────────────────
   // Prevents the user from being stuck on page 3 after narrowing the filter
   // results to only 1 page.
@@ -1623,16 +1706,18 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   // When the parent passes ALL data and pagination is enabled, BoltTable
   // slices to the current page. Server-side paginated data (already one page)
   // passes through unmodified since data.length <= pageSize in that case.
+  // Note: pinned rows are excluded — they are always visible above/below.
   const pgEnabled = pagination !== false && !!pagination;
   const pgSize = pgEnabled ? (pagination.pageSize ?? 10) : 10;
   const pgCurrent = pgEnabled ? Number(pagination.current ?? 1) : 1;
-  const needsClientPagination = pgEnabled && processedData.length > pgSize;
+  const needsClientPagination =
+    pgEnabled && unpinnedProcessedData.length > pgSize;
 
   const paginatedData = useMemo(() => {
-    if (!needsClientPagination) return processedData;
+    if (!needsClientPagination) return unpinnedProcessedData;
     const start = (pgCurrent - 1) * pgSize;
-    return processedData.slice(start, start + pgSize);
-  }, [processedData, needsClientPagination, pgCurrent, pgSize]);
+    return unpinnedProcessedData.slice(start, start + pgSize);
+  }, [unpinnedProcessedData, needsClientPagination, pgCurrent, pgSize]);
 
   // ─── Shimmer data ──────────────────────────────────────────────────────────
   // Full-screen shimmer: data is empty AND isLoading=true
@@ -1703,6 +1788,8 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   );
 
   // ─── Virtualizer ───────────────────────────────────────────────────────────
+  // paddingStart/paddingEnd reserve space for pinned rows so the virtual items
+  // never overlap with the sticky pinned row overlays.
   const rowVirtualizer = useVirtualizer({
     count: displayData.length,
     getScrollElement: () => tableAreaRef.current,
@@ -1710,15 +1797,16 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
       if (shimmerData) return rowHeight;
       const key = getRowKey(displayData[index], index);
       if (!resolvedExpandedKeys.has(key)) return rowHeight;
-      // Use measured height if available, otherwise fall back to expandedRowHeight estimate
       const cached = measuredExpandedHeights.current.get(key);
       return cached ? rowHeight + cached : rowHeight + expandedRowHeight;
     },
-    overscan: 5, // Render 5 extra rows above and below the visible window
+    overscan: 5,
     getItemKey: (index) =>
       shimmerData
         ? `__shimmer_${index}__`
         : getRowKey(displayData[index], index),
+    paddingStart: pinnedTopHeight,
+    paddingEnd: pinnedBottomHeight,
   });
 
   const rowVirtualizerRef = useRef(rowVirtualizer);
@@ -1791,7 +1879,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
 
   const rawTotal = pgEnabled
     ? (pagination.total ??
-      (needsClientPagination ? processedData.length : data.length))
+      (needsClientPagination ? unpinnedProcessedData.length : data.length))
     : data.length;
 
   // Freeze the last known good total while loading to prevent "Showing 1-0 of 0"
@@ -2317,6 +2405,10 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                     isLoading={showShimmer}
                     onExpandedRowResize={handleExpandedRowResize}
                     maxExpandedRowHeight={maxExpandedRowHeight}
+                    pinnedTopData={pinnedTopRows as DataRecord[]}
+                    pinnedBottomData={pinnedBottomRows as DataRecord[]}
+                    gridTemplateColumns={gridTemplateColumns}
+                    headerHeight={HEADER_HEIGHT}
                   />
                 )}
               </div>

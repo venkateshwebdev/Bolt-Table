@@ -591,6 +591,40 @@ export interface PaginationType {
 }
 
 /**
+ * Configuration for row pinning.
+ * When provided, the specified rows are rendered as sticky rows at the top
+ * and/or bottom of the table body, remaining visible during vertical scroll.
+ *
+ * Pinned rows are excluded from pagination — they are always visible regardless
+ * of which page the user is on. Filtering still applies: if a pinned row's key
+ * doesn't exist in the (filtered) data, it simply won't appear.
+ *
+ * @example
+ * // Pin two rows to the top and one to the bottom
+ * rowPinning={{ top: ['row-1', 'row-3'], bottom: ['row-10'] }}
+ *
+ * @example
+ * // Controlled pinning — manage pinned keys in parent state
+ * const [pinning, setPinning] = useState<RowPinningConfig>({ top: ['header-row'] });
+ * <BoltTable rowPinning={pinning} ... />
+ */
+export interface RowPinningConfig {
+  /**
+   * Row keys to pin at the top of the table.
+   * These rows stick below the column headers during vertical scroll.
+   * Order is preserved — rows are rendered in the order listed here.
+   */
+  top?: React.Key[];
+
+  /**
+   * Row keys to pin at the bottom of the table.
+   * These rows stick to the bottom of the visible area during vertical scroll.
+   * Order is preserved — rows are rendered in the order listed here.
+   */
+  bottom?: React.Key[];
+}
+
+/**
  * @deprecated Use `ExpandableConfig` instead.
  * This interface is kept for backwards compatibility only.
  */
