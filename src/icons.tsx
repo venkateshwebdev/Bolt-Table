@@ -114,6 +114,13 @@ export const PinOffIcon: React.FC<IconProps> = ({ style, className }) => (
   </svg>
 );
 
+export const CopyIcon: React.FC<IconProps> = ({ style, className }) => (
+  <svg {...svgBase} style={style} className={className}>
+    <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+    <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+  </svg>
+);
+
 export const EyeOffIcon: React.FC<IconProps> = ({ style, className }) => (
   <svg {...svgBase} style={style} className={className}>
     <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
@@ -150,4 +157,5 @@ export interface BoltTableIcons {
   chevronRight?: React.ReactNode;
   chevronsLeft?: React.ReactNode;
   chevronsRight?: React.ReactNode;
+  copy?: React.ReactNode;
 }

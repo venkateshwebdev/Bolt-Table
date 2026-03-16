@@ -25,7 +25,10 @@ A high-performance, zero-dependency\* React table component. Only the rows visib
 - **Infinite scroll** — `onEndReached` callback with configurable threshold
 - **Empty state** — custom renderer or default "No data" message
 - **Auto height** — table shrinks/grows to fit rows, capped at 10 rows by default
+- **Row pinning** — pin rows to the top or bottom of the table, sticky during vertical scroll
+- **Cell context menu** — right-click (or long-press on mobile) any cell to pin rows or copy values
 - **Right-click context menu** — sort, filter, pin, hide, plus custom items
+- **Mobile-friendly context menus** — long-press (touch-and-hold) triggers context menus on touch devices
 - **Theme-agnostic** — works in light and dark mode out of the box, no CSS variables needed
 - **Custom icons** — override any built-in icon via the `icons` prop
 
@@ -111,7 +114,7 @@ import type { BoltTableIcons } from 'bolt-table';
 />
 ```
 
-Available icon keys: `gripVertical`, `sortAsc`, `sortDesc`, `filter`, `filterClear`, `pin`, `pinOff`, `eyeOff`, `chevronDown`, `chevronLeft`, `chevronRight`, `chevronsLeft`, `chevronsRight`.
+Available icon keys: `gripVertical`, `sortAsc`, `sortDesc`, `filter`, `filterClear`, `pin`, `pinOff`, `eyeOff`, `chevronDown`, `chevronLeft`, `chevronRight`, `chevronsLeft`, `chevronsRight`, `copy`.
 
 ---
 
@@ -141,6 +144,8 @@ Available icon keys: `gripVertical`, `sortAsc`, `sortDesc`, `filter`, `filterCle
 | `onColumnPin` | `(columnKey, pinned) => void` | — | Called when a column is pinned/unpinned |
 | `onColumnHide` | `(columnKey, hidden) => void` | — | Called when a column is hidden/shown |
 | `rowSelection` | `RowSelectionConfig<T>` | — | Row selection config |
+| `rowPinning` | `RowPinningConfig` | — | Row pinning config (`{ top?: Key[], bottom?: Key[] }`) |
+| `onRowPin` | `(rowKey, pinned) => void` | — | Called when a row is pinned/unpinned via cell context menu |
 | `expandable` | `ExpandableConfig<T>` | — | Expandable row config |
 | `onEndReached` | `() => void` | — | Called when scrolled near the bottom (infinite scroll) |
 | `onEndReachedThreshold` | `number` | `5` | Rows from end to trigger `onEndReached` |
@@ -172,6 +177,7 @@ Available icon keys: `gripVertical`, `sortAsc`, `sortDesc`, `filter`, `filterCle
 | `pinned` | `'left' \| 'right' \| false` | `false` | Pin this column to an edge |
 | `className` | `string` | — | Class applied to all cells in this column |
 | `style` | `CSSProperties` | — | Styles applied to all cells in this column |
+| `copy` | `boolean \| (value, record, index) => string` | — | Enable "Copy" in cell context menu; function customizes what's copied |
 
 ---
 
@@ -372,6 +378,67 @@ Users can also pin/unpin columns at runtime via the right-click context menu.
 
 ---
 
+### Row pinning
+
+Pin rows to the top or bottom of the table so they stay visible while scrolling vertically. Pinned rows transcend pagination — they are always visible regardless of which page the user is on.
+
+```tsx
+const [rowPinning, setRowPinning] = useState({ top: [], bottom: [] });
+
+<BoltTable
+  columns={columns}
+  data={data}
+  rowKey="id"
+  rowPinning={rowPinning}
+  onRowPin={(key, pinned) => {
+    setRowPinning(prev => {
+      const top = (prev.top ?? []).filter(k => String(k) !== String(key));
+      const bottom = (prev.bottom ?? []).filter(k => String(k) !== String(key));
+      if (pinned === 'top') top.push(key);
+      if (pinned === 'bottom') bottom.push(key);
+      return { top, bottom };
+    });
+  }}
+  styles={{ pinnedRowBg: 'rgba(255, 255, 255, 0.95)' }}
+/>
+```
+
+Users can also pin/unpin rows at runtime via the right-click context menu on any body cell (when `onRowPin` is provided).
+
+Pinned rows use `position: sticky` with `backdropFilter: blur(12px)` and a subtle box-shadow to visually separate them from scrolling content. Customize with `classNames.pinnedRow`, `styles.pinnedRow`, and `styles.pinnedRowBg`.
+
+---
+
+### Cell context menu & copy
+
+Right-click (or long-press on mobile) any body cell to see a context menu with:
+
+- **Pin to Top / Unpin from Top** — shown when `onRowPin` is provided
+- **Pin to Bottom / Unpin from Bottom** — shown when `onRowPin` is provided
+- **Copy** — shown when the column has `copy: true` or a copy function
+
+```tsx
+const columns: ColumnType<User>[] = [
+  {
+    key: 'name',
+    dataIndex: 'name',
+    title: 'Name',
+    copy: true, // copies the raw cell value
+  },
+  {
+    key: 'email',
+    dataIndex: 'email',
+    title: 'Email',
+    // Custom copy — control exactly what goes to the clipboard
+    copy: (value, record) => `${record.name} <${value}>`,
+  },
+];
+```
+
+The cell context menu only appears when there is at least one action available (either `onRowPin` or `column.copy`). Otherwise, the browser's default context menu is used.
+
+---
+
 ### Styling overrides
 
 ```tsx
@@ -427,6 +494,8 @@ A complete guide to every feature in BoltTable. Each section explains the concep
 - [Row Selection](#row-selection-in-depth)
 - [Expandable Rows](#expandable-rows-in-depth)
 - [Column Interactions](#column-interactions)
+- [Row Pinning](#row-pinning-in-depth)
+- [Cell Context Menu & Copy](#cell-context-menu--copy-1)
 - [Loading States](#loading-states)
 - [Infinite Scroll](#infinite-scroll-in-depth)
 - [Empty States](#empty-states)
@@ -499,6 +568,7 @@ Columns are the backbone of BoltTable. Each column is an object conforming to `C
 | `sorter` | `boolean \| (a: T, b: T) => number` | — | `true` uses the default comparator. A function gives you full control. |
 | `filterable` | `boolean` | `true` | Whether filter controls appear in the context menu. |
 | `filterFn` | `(value: string, record: T, dataIndex: string) => boolean` | — | Custom filter predicate. Falls back to case-insensitive substring match. |
+| `copy` | `boolean \| (value, record, index) => string` | — | `true` enables default copy. A function customizes the copied text. |
 
 #### Custom rendering
 
@@ -1291,6 +1361,7 @@ CSS class overrides per table region. These are appended to (not replacing) the 
 | `pinnedCell` | Pinned column body cells (in addition to `cell`). |
 | `dragHeader` | The floating ghost column shown while dragging. |
 | `expandedRow` | The expanded content panel below each row. |
+| `pinnedRow` | Each pinned row's wrapper div. |
 
 #### Layer 3: `styles`
 
@@ -1324,6 +1395,8 @@ Inline CSS overrides with the highest specificity:
 | `rowSelected` | `CSSProperties` | Applied when a row is selected. |
 | `dragHeader` | `CSSProperties` | The ghost column while dragging. |
 | `expandedRow` | `CSSProperties` | Expanded content panel. |
+| `pinnedRow` | `CSSProperties` | Pinned row wrapper. |
+| `pinnedRowBg` | `string` | **CSS color** for pinned row cell backgrounds (falls back to `pinnedBg`). |
 
 #### Per-column styling
 
@@ -1343,7 +1416,11 @@ Each column can also have its own `className` and `style`:
 
 ### Context Menu
 
-Right-clicking any column header opens a context menu with built-in actions:
+BoltTable has two context menus — one for **column headers** and one for **body cells**. Both are accessible via right-click on desktop and **long-press (touch-and-hold ~500ms)** on mobile.
+
+#### Column header context menu
+
+Right-click (or long-press) any column header:
 
 1. **Sort Ascending** / **Sort Descending** — if `sortable` is not `false`
 2. **Filter Column** / **Clear Filter** — if `filterable` is not `false`
@@ -1398,6 +1475,152 @@ const customMenuItems: ColumnContextMenuItem[] = [
 | `danger` | `boolean` | Renders label in red. |
 | `disabled` | `boolean` | Grays out the item; click handler not called. |
 | `onClick` | `(columnKey: string) => void` | Called with the column's key when clicked. |
+
+#### Cell context menu
+
+Right-click (or long-press) any body cell to see a context menu with row pinning and copy actions. This menu only appears when at least one action is available.
+
+| Action | Shown when |
+|--------|-----------|
+| Pin to Top / Unpin from Top | `onRowPin` prop is provided |
+| Pin to Bottom / Unpin from Bottom | `onRowPin` prop is provided |
+| Copy | Column has `copy: true` or a copy function |
+
+```tsx
+<BoltTable
+  columns={[
+    { key: 'name', dataIndex: 'name', title: 'Name', copy: true },
+    {
+      key: 'email', dataIndex: 'email', title: 'Email',
+      copy: (value, record) => `${record.name} <${value}>`,
+    },
+  ]}
+  data={data}
+  rowKey="id"
+  rowPinning={rowPinning}
+  onRowPin={(key, pinned) => updatePinning(key, pinned)}
+/>
+```
+
+#### Mobile support
+
+Both context menus work on touch devices via **long-press** (touch-and-hold for ~500ms):
+
+- Touch a header or cell and hold for 500ms → the context menu appears at the touch position
+- If you move your finger more than 10px before the timer fires, the long-press is cancelled (you're scrolling, not long-pressing)
+- Lifting your finger before 500ms cancels the long-press
+
+No additional configuration is needed — mobile support is built in.
+
+---
+
+### Row Pinning In-Depth
+
+Row pinning freezes specific rows at the top or bottom of the table body. Pinned rows remain visible while the user scrolls vertically — useful for summary rows, totals, or important records.
+
+#### Basic usage
+
+```tsx
+<BoltTable
+  columns={columns}
+  data={data}
+  rowKey="id"
+  rowPinning={{
+    top: ['total-row', 'header-row'],   // always visible at top
+    bottom: ['footer-row'],              // always visible at bottom
+  }}
+/>
+```
+
+#### Controlled pinning with context menu
+
+When you provide `onRowPin`, users can pin/unpin rows via the cell right-click context menu:
+
+```tsx
+const [rowPinning, setRowPinning] = useState<RowPinningConfig>({
+  top: [],
+  bottom: [],
+});
+
+<BoltTable
+  columns={columns}
+  data={data}
+  rowKey="id"
+  rowPinning={rowPinning}
+  onRowPin={(key, pinned) => {
+    setRowPinning(prev => {
+      const top = (prev.top ?? []).filter(k => String(k) !== String(key));
+      const bottom = (prev.bottom ?? []).filter(k => String(k) !== String(key));
+      if (pinned === 'top') top.push(key);
+      if (pinned === 'bottom') bottom.push(key);
+      return { top, bottom };
+    });
+  }}
+/>
+```
+
+#### Key behaviors
+
+- **Transcends pagination**: pinned rows are always visible regardless of which page the user is on
+- **Respects filtering**: if a pinned row's key doesn't match any row in the filtered data, it won't appear
+- **Column pinning**: column pinning (sticky left/right) works within pinned rows
+- **Selection & hover**: row selection and hover styles work on pinned rows
+- **Backdrop blur**: pinned rows have `backdropFilter: blur(12px)` by default
+
+#### Styling pinned rows
+
+```tsx
+<BoltTable
+  classNames={{
+    pinnedRow: 'border-b-2 border-blue-300',
+  }}
+  styles={{
+    pinnedRow: { fontWeight: 600 },
+    pinnedRowBg: 'rgba(239, 246, 255, 0.95)',
+  }}
+/>
+```
+
+#### `RowPinningConfig` reference
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `top` | `React.Key[]` | Row keys pinned to the top. Order is preserved. |
+| `bottom` | `React.Key[]` | Row keys pinned to the bottom. Order is preserved. |
+
+---
+
+### Cell Context Menu & Copy
+
+The cell context menu provides per-cell actions triggered by right-click (desktop) or long-press (mobile).
+
+#### The `copy` column option
+
+Add `copy` to any column to enable the "Copy" action in the cell context menu:
+
+```tsx
+const columns: ColumnType<User>[] = [
+  {
+    key: 'id',
+    dataIndex: 'id',
+    title: 'ID',
+    copy: true,  // copies String(value) to clipboard
+  },
+  {
+    key: 'fullName',
+    dataIndex: 'firstName',
+    title: 'Full Name',
+    // Custom copy function — like sorter, you control what gets copied
+    copy: (value, record, index) => `${record.firstName} ${record.lastName}`,
+  },
+];
+```
+
+The `copy` field works like `sorter`:
+- `true` → default behavior (copies `String(cellValue)`)
+- A function `(value, record, index) => string` → you decide what string is copied
+
+The copy action uses `navigator.clipboard.writeText()`.
 
 ---
 
@@ -1481,6 +1704,7 @@ const icons: BoltTableIcons = {
 | `chevronRight` | Pagination: next page |
 | `chevronsLeft` | Pagination: first page |
 | `chevronsRight` | Pagination: last page |
+| `copy` | Copy action in cell context menu |
 
 To hide the grip icon entirely:
 
@@ -1541,6 +1765,7 @@ import type {
   DataRecord,            // Base row type (Record<string, unknown>)
   ExpandableConfig,      // Expandable rows configuration
   PaginationType,        // Pagination configuration
+  RowPinningConfig,      // Row pinning configuration ({ top?, bottom? })
   RowSelectionConfig,    // Row selection configuration
   SortDirection,         // 'asc' | 'desc' | null
 } from 'bolt-table';
@@ -1744,6 +1969,7 @@ import type {
   ColumnType,
   ColumnContextMenuItem,
   RowSelectionConfig,
+  RowPinningConfig,
   ExpandableConfig,
   PaginationType,
   SortDirection,

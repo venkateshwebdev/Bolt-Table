@@ -25,7 +25,10 @@ import {
   ChevronRightIcon,
   ChevronsLeftIcon,
   ChevronsRightIcon,
+  CopyIcon,
   GripVerticalIcon,
+  PinIcon,
+  PinOffIcon,
 } from './icons';
 import ResizeOverlay, { type ResizeOverlayHandle } from './ResizeOverlay';
 import TableBody from './TableBody';
@@ -433,6 +436,29 @@ interface BoltTableProps<T extends DataRecord = DataRecord> {
   readonly rowPinning?: RowPinningConfig;
 
   /**
+   * Called when the user pins or unpins a row via the cell right-click context menu.
+   * Update your `rowPinning` state in this callback.
+   *
+   * @param rowKey - The key of the row whose pin state changed
+   * @param pinned - `'top'`, `'bottom'`, or `false` (unpinned)
+   *
+   * @example
+   * onRowPin={(key, pinned) => {
+   *   setRowPinning(prev => {
+   *     const top = (prev.top ?? []).filter(k => String(k) !== String(key));
+   *     const bottom = (prev.bottom ?? []).filter(k => String(k) !== String(key));
+   *     if (pinned === 'top') top.push(key);
+   *     if (pinned === 'bottom') bottom.push(key);
+   *     return { top, bottom };
+   *   });
+   * }}
+   */
+  readonly onRowPin?: (
+    rowKey: React.Key,
+    pinned: 'top' | 'bottom' | false,
+  ) => void;
+
+  /**
    * Called when the user scrolls near the bottom of the table.
    * Use this for infinite scroll / load-more behavior.
    * Fires when the last visible row is within `onEndReachedThreshold` rows of the end.
@@ -803,6 +829,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   onColumnHide,
   rowSelection,
   rowPinning,
+  onRowPin,
   expandable,
   rowKey = 'id',
   onEndReached,
@@ -1691,6 +1718,62 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   const pinnedTopHeight = pinnedTopRows.length * rowHeight;
   const pinnedBottomHeight = pinnedBottomRows.length * rowHeight;
 
+  // Pre-computed key sets for fast "is this row pinned?" checks in the cell context menu
+  const pinnedTopKeySet = useMemo(
+    () => new Set((rowPinning?.top ?? []).map(String)),
+    [rowPinning?.top],
+  );
+  const pinnedBottomKeySet = useMemo(
+    () => new Set((rowPinning?.bottom ?? []).map(String)),
+    [rowPinning?.bottom],
+  );
+
+  // ─── Cell context menu ────────────────────────────────────────────────────
+  const [cellContextMenu, setCellContextMenu] = useState<{
+    x: number;
+    y: number;
+    rowKey: string;
+    columnKey: string;
+  } | null>(null);
+
+  const cellMenuRef = useRef<HTMLDivElement>(null);
+
+  // Long-press support for mobile (cell context menu)
+  const cellLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const cellTouchStart = useRef<{ x: number; y: number } | null>(null);
+
+  const cancelCellLongPress = useCallback(() => {
+    if (cellLongPressTimer.current) {
+      clearTimeout(cellLongPressTimer.current);
+      cellLongPressTimer.current = null;
+    }
+    cellTouchStart.current = null;
+  }, []);
+
+  // Close the cell context menu on click-outside or Escape
+  React.useEffect(() => {
+    if (!cellContextMenu) return;
+    const close = (e: MouseEvent) => {
+      if (
+        cellMenuRef.current &&
+        cellMenuRef.current.contains(e.target as Node)
+      )
+        return;
+      setCellContextMenu(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setCellContextMenu(null);
+    };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [cellContextMenu]);
+
   // ─── Scroll to top when filters change ────────────────────────────────────
   // Prevents the user from being stuck on page 3 after narrowing the filter
   // results to only 1 page.
@@ -2191,6 +2274,70 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                   position: 'relative',
                   ...(isEmpty ? { height: '100%' } : {}),
                 }}
+                onContextMenu={(e) => {
+                  const cell = (
+                    e.target as HTMLElement
+                  ).closest<HTMLElement>('[data-bt-cell]');
+                  if (!cell) return;
+                  const rk = cell.dataset.rowKey;
+                  const ck = cell.dataset.columnKey;
+                  if (!rk || !ck) return;
+
+                  const col = freshOrderedColumns.find(
+                    (c) => c.key === ck,
+                  );
+                  const hasCopy = col?.copy;
+                  const hasRowPin = !!onRowPin;
+                  if (!hasCopy && !hasRowPin) return;
+
+                  e.preventDefault();
+                  setCellContextMenu({
+                    x: Math.min(e.clientX, window.innerWidth - 200),
+                    y: Math.min(e.clientY, window.innerHeight - 200),
+                    rowKey: rk,
+                    columnKey: ck,
+                  });
+                }}
+                onTouchStart={(e) => {
+                  cancelCellLongPress();
+                  const cell = (
+                    e.target as HTMLElement
+                  ).closest<HTMLElement>('[data-bt-cell]');
+                  if (!cell) return;
+                  const touch = e.touches[0];
+                  cellTouchStart.current = {
+                    x: touch.clientX,
+                    y: touch.clientY,
+                  };
+                  const rk = cell.dataset.rowKey;
+                  const ck = cell.dataset.columnKey;
+                  cellLongPressTimer.current = setTimeout(() => {
+                    cellLongPressTimer.current = null;
+                    if (!rk || !ck) return;
+                    const col = freshOrderedColumns.find(
+                      (c) => c.key === ck,
+                    );
+                    const hasCopy = col?.copy;
+                    const hasRowPin = !!onRowPin;
+                    if (!hasCopy && !hasRowPin) return;
+                    setCellContextMenu({
+                      x: Math.min(touch.clientX, window.innerWidth - 200),
+                      y: Math.min(touch.clientY, window.innerHeight - 200),
+                      rowKey: rk,
+                      columnKey: ck,
+                    });
+                  }, 500);
+                }}
+                onTouchMove={(e) => {
+                  if (!cellTouchStart.current) return;
+                  const touch = e.touches[0];
+                  const dx = touch.clientX - cellTouchStart.current.x;
+                  const dy = touch.clientY - cellTouchStart.current.y;
+                  if (Math.abs(dx) > 10 || Math.abs(dy) > 10)
+                    cancelCellLongPress();
+                }}
+                onTouchEnd={cancelCellLongPress}
+                onTouchCancel={cancelCellLongPress}
               >
                 {/* ── Column headers ─────────────────────────────────── */}
                   {orderedColumns.map((column, visualIndex) => {
@@ -2696,6 +2843,174 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
           </div>,
           document.body,
         )}
+
+      {/* ── Cell context menu (right-click on body cells) ──────────────────── */}
+      {cellContextMenu &&
+        typeof document !== 'undefined' &&
+        (() => {
+          const menuCol = freshOrderedColumns.find(
+            (c) => c.key === cellContextMenu.columnKey,
+          );
+          const isPinnedTop = pinnedTopKeySet.has(cellContextMenu.rowKey);
+          const isPinnedBottom = pinnedBottomKeySet.has(
+            cellContextMenu.rowKey,
+          );
+          const hasCopy = menuCol?.copy;
+          const hasRowPin = !!onRowPin;
+
+          // Look up the record for the copy action
+          let menuRecord: T | undefined;
+          let menuRowIndex = 0;
+          const allRows = [
+            ...pinnedTopRows,
+            ...(displayData as T[]),
+            ...pinnedBottomRows,
+          ];
+          for (let i = 0; i < allRows.length; i++) {
+            const rk = getRowKey(allRows[i], i);
+            if (rk === cellContextMenu.rowKey) {
+              menuRecord = allRows[i];
+              menuRowIndex = i;
+              break;
+            }
+          }
+
+          const menuValue = menuRecord && menuCol
+            ? menuRecord[menuCol.dataIndex]
+            : undefined;
+
+          const btnStyle: CSSProperties = {
+            display: 'flex',
+            width: '100%',
+            alignItems: 'center',
+            gap: 8,
+            background: 'none',
+            border: 'none',
+            padding: '6px 12px',
+            fontSize: 12,
+            cursor: 'pointer',
+            color: 'inherit',
+            whiteSpace: 'nowrap',
+          };
+
+          return createPortal(
+            <div
+              ref={cellMenuRef}
+              style={{
+                position: 'fixed',
+                top: cellContextMenu.y,
+                left: cellContextMenu.x,
+                zIndex: 99999,
+                minWidth: 170,
+                borderRadius: 8,
+                border: '1px solid rgba(128,128,128,0.2)',
+                boxShadow: '0 4px 24px rgba(0,0,0,0.12)',
+                backdropFilter: 'blur(16px)',
+                WebkitBackdropFilter: 'blur(16px)',
+                backgroundColor: 'rgba(128,128,128,0.08)',
+                padding: '4px 0',
+                fontSize: 10,
+              }}
+            >
+              {hasRowPin && (
+                <>
+                  <button
+                    data-bt-ctx-item
+                    style={btnStyle}
+                    onClick={() => {
+                      onRowPin!(
+                        cellContextMenu.rowKey,
+                        isPinnedTop ? false : 'top',
+                      );
+                      setCellContextMenu(null);
+                    }}
+                  >
+                    {isPinnedTop
+                      ? (icons?.pinOff ?? (
+                          <PinOffIcon
+                            style={{ width: 14, height: 14, flexShrink: 0 }}
+                          />
+                        ))
+                      : (icons?.pin ?? (
+                          <PinIcon
+                            style={{ width: 14, height: 14, flexShrink: 0 }}
+                          />
+                        ))}
+                    {isPinnedTop ? 'Unpin Row from Top' : 'Pin Row to Top'}
+                  </button>
+
+                  <button
+                    data-bt-ctx-item
+                    style={btnStyle}
+                    onClick={() => {
+                      onRowPin!(
+                        cellContextMenu.rowKey,
+                        isPinnedBottom ? false : 'bottom',
+                      );
+                      setCellContextMenu(null);
+                    }}
+                  >
+                    {isPinnedBottom
+                      ? (icons?.pinOff ?? (
+                          <PinOffIcon
+                            style={{ width: 14, height: 14, flexShrink: 0 }}
+                          />
+                        ))
+                      : (icons?.pin ?? (
+                          <PinIcon
+                            style={{
+                              width: 14,
+                              height: 14,
+                              flexShrink: 0,
+                              transform: 'rotate(180deg)',
+                            }}
+                          />
+                        ))}
+                    {isPinnedBottom ? 'Unpin Row from Bottom' : 'Pin Row to Bottom'}
+                  </button>
+                </>
+              )}
+
+              {hasRowPin && hasCopy && (
+                <div
+                  style={{
+                    borderTop: '1px solid rgba(128,128,128,0.2)',
+                    margin: '4px 0',
+                  }}
+                />
+              )}
+
+              {hasCopy && menuRecord && menuCol && (
+                <button
+                  data-bt-ctx-item
+                  style={btnStyle}
+                  onClick={() => {
+                    const text =
+                      typeof menuCol.copy === 'function'
+                        ? (
+                            menuCol.copy as (
+                              v: unknown,
+                              r: T,
+                              i: number,
+                            ) => string
+                          )(menuValue, menuRecord!, menuRowIndex)
+                        : String(menuValue ?? '');
+                    navigator.clipboard?.writeText(text);
+                    setCellContextMenu(null);
+                  }}
+                >
+                  {icons?.copy ?? (
+                    <CopyIcon
+                      style={{ width: 14, height: 14, flexShrink: 0 }}
+                    />
+                  )}
+                  Copy
+                </button>
+              )}
+            </div>,
+            document.body,
+          );
+        })()}
     </>
   );
 }

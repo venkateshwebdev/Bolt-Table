@@ -225,6 +225,24 @@ export interface ColumnType<T = unknown> {
    * style: { textAlign: 'right', fontFamily: 'monospace' }
    */
   style?: React.CSSProperties;
+
+  /**
+   * Enables the "Copy" action in the cell right-click context menu.
+   *
+   * - `true` — copies the raw cell value as a string via `String(value)`
+   * - A function — called with `(value, record, index)` to produce the
+   *   string that is copied to the clipboard. Similar to `sorter`.
+   *
+   * When omitted or `false`, no "Copy" option appears in the cell menu.
+   *
+   * @example
+   * // Default copy
+   * copy: true
+   *
+   * // Custom copy — combine fields
+   * copy: (value, record) => `${record.firstName} ${record.lastName}`
+   */
+  copy?: boolean | ((value: unknown, record: T, index: number) => string);
 }
 
 /**

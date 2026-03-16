@@ -295,29 +295,57 @@ const DraggableHeader = React.memo(
     }, [contextMenu]);
 
     /**
-     * Shows the context menu at the cursor position, adjusting to stay within
-     * the viewport boundaries so it never renders partially off-screen.
+     * Opens the context menu, clamping position to stay within viewport.
+     * Shared by the right-click handler and the mobile long-press handler.
      */
+    const showContextMenuAt = (clientX: number, clientY: number) => {
+      const menuWidth = 160;
+      const menuHeight = 180;
+      let x = clientX;
+      let y = clientY;
+      if (x + menuWidth > window.innerWidth)
+        x = window.innerWidth - menuWidth - 10;
+      if (y + menuHeight > window.innerHeight)
+        y = window.innerHeight - menuHeight - 10;
+      setContextMenu({ x, y });
+    };
+
     const handleContextMenu = (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
+      showContextMenuAt(e.clientX, e.clientY);
+    };
 
-      const menuWidth = 160;
-      const menuHeight = 180;
-      let x = e.clientX;
-      let y = e.clientY;
+    // ── Long-press support for mobile ─────────────────────────────────────
+    const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+      null,
+    );
+    const touchStartRef = useRef<{ x: number; y: number } | null>(null);
 
-      // Flip horizontally if the menu would overflow the right edge
-      if (x + menuWidth > window.innerWidth) {
-        x = window.innerWidth - menuWidth - 10;
+    const cancelLongPress = () => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
       }
+      touchStartRef.current = null;
+    };
 
-      // Flip vertically if the menu would overflow the bottom edge
-      if (y + menuHeight > window.innerHeight) {
-        y = window.innerHeight - menuHeight - 10;
-      }
+    const handleTouchStart = (e: React.TouchEvent) => {
+      cancelLongPress();
+      const touch = e.touches[0];
+      touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+      longPressTimerRef.current = setTimeout(() => {
+        longPressTimerRef.current = null;
+        showContextMenuAt(touch.clientX, touch.clientY);
+      }, 500);
+    };
 
-      setContextMenu({ x, y });
+    const handleTouchMove = (e: React.TouchEvent) => {
+      if (!touchStartRef.current) return;
+      const touch = e.touches[0];
+      const dx = touch.clientX - touchStartRef.current.x;
+      const dy = touch.clientY - touchStartRef.current.y;
+      if (Math.abs(dx) > 10 || Math.abs(dy) > 10) cancelLongPress();
     };
 
     /**
@@ -387,6 +415,10 @@ const DraggableHeader = React.memo(
           style={headerStyle}
           className={`${column.className ?? ''} ${classNames?.header ?? ''} ${isPinned ? (classNames?.pinnedHeader ?? '') : ''}`}
           onContextMenu={handleContextMenu}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={cancelLongPress}
+          onTouchCancel={cancelLongPress}
         >
           <div
             role={isPinned ? undefined : 'button'}
