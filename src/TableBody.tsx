@@ -464,6 +464,9 @@ const Cell = React.memo(
     if (prev.column.key === '__expand__') {
       return prev.isExpanded === next.isExpanded;
     }
+    if (prev.column.render) {
+      return prev.record === next.record && prev.rowIndex === next.rowIndex;
+    }
     return (
       prev.value === next.value &&
       prev.rowIndex === next.rowIndex &&
