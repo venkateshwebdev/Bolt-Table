@@ -560,7 +560,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
         const scrollEl = tableAreaRef.current;
         if (!scrollEl) return;
         const headers =
-          scrollEl.querySelectorAll<HTMLElement>('[data-column-key]');
+          scrollEl.querySelectorAll<HTMLElement>('[data-bt-header][data-column-key]');
         let newOverId: string | null = null;
         headers.forEach((h) => {
           const key = h.dataset.columnKey;
@@ -1283,10 +1283,10 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
           [data-bt-ctx-item]:not(:disabled):hover {
             background-color: rgba(128, 128, 128, 0.15);
           }
-          [data-column-key][data-dragging] {
+          [data-bt-header][data-dragging] {
             opacity: 0.3 !important;
           }
-          [data-column-key][data-drag-over] {
+          [data-bt-header][data-drag-over] {
             border: 1px dashed ${accentColor} !important;
           }
         `}</style>
