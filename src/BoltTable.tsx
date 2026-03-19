@@ -258,6 +258,8 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   );
 
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+  React.useEffect(() => { setMounted(true); }, []);
 
   const columnsFingerprintRef = useRef('');
   const newFingerprint = initialColumns
@@ -554,6 +556,10 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
         ghost.style.top = `${rect.top}px`;
       }
 
+      const grabStyle = document.createElement('style');
+      grabStyle.textContent = '* { cursor: grabbing !important; }';
+      document.head.appendChild(grabStyle);
+
       const onMove = (ev: PointerEvent) => {
         if (ghost) {
           ghost.style.left = `${ev.clientX - offsetX}px`;
@@ -594,6 +600,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
       const onUp = () => {
         document.removeEventListener('pointermove', onMove);
         document.removeEventListener('pointerup', onUp);
+        grabStyle.remove();
         const scrollEl = tableAreaRef.current;
         if (scrollEl) {
           scrollEl
@@ -1963,7 +1970,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
         )}
       </div>
 
-      {typeof document !== 'undefined' &&
+      {mounted &&
         createPortal(
           <div
             ref={ghostRef}
@@ -2030,7 +2037,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
         )}
 
       {cellContextMenu &&
-        typeof document !== 'undefined' &&
+        mounted &&
         (() => {
           const menuCol = freshOrderedColumns.find(
             (c) => c.key === cellContextMenu.columnKey,
