@@ -153,6 +153,7 @@ const Cell = React.memo(
             boxSizing: 'border-box',
             ...column.style,
             ...(isPinned ? styles?.pinnedCell : undefined),
+            ...styles?.cell,
           }}
         >
           {shimmerContent}
@@ -212,7 +213,7 @@ const Cell = React.memo(
 
       return (
         <div
-          className={`${column.className ?? ''} ${classNames?.cell ?? ''}`}
+          className={`${column.className ?? ''} ${classNames?.cell ?? ''} ${isPinned ? (classNames?.pinnedCell ?? '') : ''}`}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -228,6 +229,7 @@ const Cell = React.memo(
             boxSizing: 'border-box',
             ...column.style,
             ...(isPinned ? styles?.pinnedCell : undefined),
+            ...styles?.cell,
           }}
         >
           {content}
@@ -239,34 +241,48 @@ const Cell = React.memo(
       ? column.render(value, record, rowIndex)
       : ((value as React.ReactNode) ?? '');
 
+    const isSystem = column.key === '__select__' || column.key === '__expand__';
+
     return (
       <div
-        className={`${column.className ?? ''} ${classNames?.cell ?? ''}`}
+        className={`${column.className ?? ''} ${classNames?.cell ?? ''} ${isPinned ? (classNames?.pinnedCell ?? '') : ''}`}
         style={{
           display: 'flex',
           alignItems: 'center',
           overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap' as const,
           borderBottom: '1px solid rgba(128,128,128,0.2)',
           paddingLeft: 8,
           paddingRight: 8,
-          justifyContent:
-            column.key === '__select__' || column.key === '__expand__'
-              ? 'center'
-              : undefined,
+          justifyContent: isSystem ? 'center' : undefined,
           height: '100%',
           boxSizing: 'border-box',
+          minWidth: 0,
           ...column.style,
           ...(isPinned ? styles?.pinnedCell : undefined),
+          ...styles?.cell,
         }}
       >
-        {content}
+        {isSystem ? content : (
+          <div
+            style={{
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              minWidth: 0,
+              maxWidth: '100%',
+            }}
+          >
+            {content}
+          </div>
+        )}
       </div>
     );
   },
   (prev, next) => {
     if (prev.isLoading !== next.isLoading) return false;
+    if (prev.column.pinned !== next.column.pinned) return false;
+    if (prev.classNames !== next.classNames) return false;
+    if (prev.styles !== next.styles) return false;
     if (prev.column.key === '__select__') {
       return (
         prev.isSelected === next.isSelected &&
@@ -386,7 +402,6 @@ const TableBody: React.FC<TableBodyProps> = ({
         style.right = `${stickyOffset}px`;
 
       if (isPinned) {
-        style.backgroundColor = (styles as any)?.pinnedBg;
         if (styles?.pinnedCell) Object.assign(style, styles.pinnedCell);
       }
 
@@ -403,6 +418,7 @@ const TableBody: React.FC<TableBodyProps> = ({
         return (
           <div
             key={`spacer-${colStyle.key}`}
+            {...(colStyle.isPinned ? { 'data-bt-pinned': '' } : {})}
             style={colStyle.style}
           >
             {virtualItems.map((virtualRow: VirtualItem) => {

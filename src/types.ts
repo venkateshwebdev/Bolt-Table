@@ -165,6 +165,13 @@ export interface PaginationType {
 
   /** Custom renderer for the "showing X–Y of Z" text in the pagination footer. */
   showTotal?: (total: number, range: [number, number]) => ReactNode;
+
+  /** When `true`, hides the page-size dropdown selector in the pagination footer. */
+  hidePageSelector?: boolean;
+
+  /** Custom page-size options shown in the dropdown. Defaults to `[10, 15, 20, 25, 50, 100]`. */
+  pageSizeOptions?: number[];
+
 }
 
 /** Configuration for row pinning. Pinned rows remain visible during vertical scroll. */

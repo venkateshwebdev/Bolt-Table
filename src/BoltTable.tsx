@@ -104,10 +104,10 @@ interface BoltTableProps<T extends DataRecord = DataRecord> {
   /** Determines the unique key for each row. Can be a string property name, function, number, or symbol. */
   readonly rowKey?: string | ((record: T) => string) | number | symbol;
 
-  /** Row selection configuration. Prepends a checkbox/radio column when provided. */
-  expandable?: ExpandableConfig<T>;
-
   /** Expandable row configuration. Prepends an expand toggle column when provided. */
+  readonly expandable?: ExpandableConfig<T>;
+
+  /** Row selection configuration. Prepends a checkbox/radio column when provided. */
   readonly rowSelection?: RowSelectionConfig<T>;
 
   /** Row pinning configuration. Specified rows render as sticky at top and/or bottom. */
@@ -215,6 +215,8 @@ export interface StylesTypes {
 }
 
 const SHIMMER_WIDTHS = [55, 70, 45, 80, 60, 50, 75, 65, 40, 72];
+const EMPTY_CLASSNAMES: ClassNamesTypes = {};
+const EMPTY_STYLES: StylesTypes = {};
 
 export default function BoltTable<T extends DataRecord = DataRecord>({
   columns: initialColumns,
@@ -224,8 +226,8 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   maxExpandedRowHeight,
   accentColor = '#1890ff',
   className = '',
-  classNames = {},
-  styles = {},
+  classNames = EMPTY_CLASSNAMES,
+  styles = EMPTY_STYLES,
   gripIcon,
   hideGripIcon,
   icons,
@@ -1032,12 +1034,23 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     .map((k) => `${k}:${columnFilters[k]}`)
     .join('|');
   React.useEffect(() => {
+    setInternalPage(1);
     tableAreaRef.current?.scrollTo({ top: 0 });
   }, [columnFiltersKey]);
 
-  const pgEnabled = pagination !== false && !!pagination;
-  const pgSize = pgEnabled ? (pagination.pageSize ?? 10) : 10;
-  const pgCurrent = pgEnabled ? Number(pagination.current ?? 1) : 1;
+  const DEFAULT_PAGE_SIZE = 15;
+  const [internalPage, setInternalPage] = useState(1);
+  const [internalPageSize, setInternalPageSize] = useState(DEFAULT_PAGE_SIZE);
+
+  const autoPagination = pagination === undefined && data.length > DEFAULT_PAGE_SIZE;
+  const pgEnabled = pagination === false ? false : (!!pagination || autoPagination);
+  const pgSize = pgEnabled && typeof pagination === 'object' && pagination?.pageSize !== undefined
+    ? pagination.pageSize
+    : internalPageSize;
+  const isControlledPagination = typeof pagination === 'object' && pagination?.current !== undefined;
+  const pgCurrent = pgEnabled
+    ? (isControlledPagination ? Number(pagination!.current) : internalPage)
+    : 1;
   const needsClientPagination =
     pgEnabled && unpinnedProcessedData.length > pgSize;
 
@@ -1179,7 +1192,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   const pageSize = pgSize;
 
   const rawTotal = pgEnabled
-    ? (pagination.total ??
+    ? ((typeof pagination === 'object' ? pagination?.total : undefined) ??
       (needsClientPagination ? unpinnedProcessedData.length : data.length))
     : data.length;
 
@@ -1194,10 +1207,23 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
+  React.useEffect(() => {
+    if (internalPage > totalPages) {
+      setInternalPage(Math.max(1, totalPages));
+    }
+  }, [totalPages, internalPage]);
+
   const handlePageChange = (p: number) => {
-    if (p >= 1 && p <= totalPages) onPaginationChange?.(p, pageSize);
+    if (p >= 1 && p <= totalPages) {
+      setInternalPage(p);
+      onPaginationChange?.(p, pageSize);
+    }
   };
-  const handlePageSizeChange = (s: number) => onPaginationChange?.(1, s);
+  const handlePageSizeChange = (s: number) => {
+    setInternalPage(1);
+    setInternalPageSize(s);
+    onPaginationChange?.(1, s);
+  };
 
   React.useEffect(() => {
     if (needsClientPagination) {
@@ -1264,6 +1290,14 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
           @keyframes bt-pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }
+          }
+          :where([data-bt-header]) {
+            background-color: rgba(128,128,128,0.06);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+          }
+          :where([data-bt-pinned]) {
+            background-color: ${styles.pinnedBg ?? 'Canvas'};
           }
           [data-row-key][data-hover] > div {
             background-color: ${styles.rowHover?.backgroundColor ?? 'rgba(128, 128, 128, 0.1)'};
@@ -1508,6 +1542,8 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                       return (
                         <div
                           key="__select__"
+                          data-bt-header=""
+                          data-bt-pinned=""
                           className={`${classNames.header ?? ''} ${classNames.pinnedHeader ?? ''}`}
                           style={{
                             display: 'flex',
@@ -1518,7 +1554,6 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap' as const,
                             borderBottom: '1px solid rgba(128,128,128,0.2)',
-                            backgroundColor: (styles as any)?.pinnedBg,
                             position: 'sticky',
                             left: columnOffsets.get('__select__') ?? 0,
                             top: 0,
@@ -1575,6 +1610,8 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                       return (
                         <div
                           key="__expand__"
+                          data-bt-header=""
+                          data-bt-pinned=""
                           className={`${classNames.header ?? ''} ${classNames.pinnedHeader ?? ''}`}
                           style={{
                             display: 'flex',
@@ -1585,7 +1622,6 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap' as const,
                             borderBottom: '1px solid rgba(128,128,128,0.2)',
-                            backgroundColor: (styles as any)?.pinnedBg,
                             position: 'sticky',
                             left: columnOffsets.get('__expand__') ?? 0,
                             top: 0,
@@ -1712,7 +1748,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
           )}
         </div>
 
-        {pagination !== false && (
+        {pgEnabled && (
           <div
             style={{
               display: 'flex',
@@ -1733,7 +1769,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                 const rangeStart =
                   total > 0 ? (currentPage - 1) * pageSize + 1 : 0;
                 const rangeEnd = Math.min(currentPage * pageSize, total);
-                return pagination?.showTotal ? (
+                return (typeof pagination === 'object' && pagination?.showTotal) ? (
                   <span style={{ color: 'GrayText', fontSize: 12 }}>
                     Showing{' '}
                     {pagination.showTotal(total, [rangeStart, rangeEnd])} of{' '}
@@ -1894,29 +1930,34 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                 gap: 8,
               }}
             >
-              <select
-                value={pageSize}
-                onChange={(e) => handlePageSizeChange(Number(e.target.value))}
-                style={{
-                  cursor: 'pointer',
-                  borderRadius: 4,
-                  border: '1px solid rgba(128,128,128,0.2)',
-                  paddingLeft: 6,
-                  paddingRight: 6,
-                  paddingTop: 2,
-                  paddingBottom: 2,
-                  fontSize: 12,
-                  height: 24,
-                  background: 'inherit',
-                  color: 'inherit',
-                }}
-              >
-                {[10, 15, 20, 25, 50, 100].map((size) => (
-                  <option key={size} value={size}>
-                    {size} / page
-                  </option>
-                ))}
-              </select>
+{(typeof pagination === 'object' && pagination?.hidePageSelector) ? null : (
+                <select
+                  value={pageSize}
+                  onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+                  style={{
+                    cursor: 'pointer',
+                    borderRadius: 4,
+                    border: '1px solid rgba(128,128,128,0.2)',
+                    paddingLeft: 6,
+                    paddingRight: 6,
+                    paddingTop: 2,
+                    paddingBottom: 2,
+                    fontSize: 12,
+                    height: 24,
+                    background: 'inherit',
+                    color: 'inherit',
+                  }}
+                >
+                  {(typeof pagination === 'object' && pagination?.pageSizeOptions
+                    ? pagination.pageSizeOptions
+                    : [10, 15, 20, 25, 50, 100]
+                  ).map((size) => (
+                    <option key={size} value={size}>
+                      {size} / page
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
           </div>
         )}

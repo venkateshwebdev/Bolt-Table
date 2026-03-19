@@ -192,6 +192,12 @@ const DraggableHeader = React.memo(
       ...(isLastColumn ? {} : { maxWidth: widthPx }),
       gridColumn: visualIndex + 1,
       gridRow: 1,
+      display: 'flex',
+      height: 36,
+      alignItems: 'center',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap' as const,
       borderTop: 'none',
       borderRight: 'none',
       borderBottom: '1px solid rgba(128,128,128,0.2)',
@@ -202,27 +208,9 @@ const DraggableHeader = React.memo(
       ...(column.pinned === 'right' && stickyOffset !== undefined
         ? { right: `${stickyOffset}px` }
         : {}),
-      ...(isPinned
-        ? {
-            backgroundColor: (styles as any)?.pinnedBg,
-            ...styles?.pinnedHeader,
-          }
-        : {}),
       ...column.style,
+      ...(isPinned ? styles?.pinnedHeader : {}),
       ...styles?.header,
-      backgroundColor:
-        ((styles as any)?.pinnedBg && isPinned)
-          ? (styles as any).pinnedBg
-          : (isPinned ? '' : 'rgba(128,128,128,0.06)'),
-      display: 'flex',
-      height: 36,
-      alignItems: 'center',
-      overflow: 'hidden',
-      textOverflow: 'ellipsis',
-      whiteSpace: 'nowrap' as const,
-      ...(isPinned
-        ? {}
-        : { backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }),
     };
 
     return (
@@ -230,6 +218,7 @@ const DraggableHeader = React.memo(
         <div
           data-column-key={column.key}
           data-bt-header=""
+          {...(isPinned ? { 'data-bt-pinned': '' } : {})}
           style={headerStyle}
           className={`${column.className ?? ''} ${classNames?.header ?? ''} ${isPinned ? (classNames?.pinnedHeader ?? '') : ''}`}
           onContextMenu={handleContextMenu}
@@ -718,7 +707,9 @@ const DraggableHeader = React.memo(
       prevProps.stickyOffset === nextProps.stickyOffset &&
       prevProps.isLastColumn === nextProps.isLastColumn &&
       prevProps.sortDirection === nextProps.sortDirection &&
-      prevProps.filterValue === nextProps.filterValue
+      prevProps.filterValue === nextProps.filterValue &&
+      prevProps.classNames === nextProps.classNames &&
+      prevProps.styles === nextProps.styles
     );
   },
 );
