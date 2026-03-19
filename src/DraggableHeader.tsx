@@ -709,7 +709,8 @@ const DraggableHeader = React.memo(
       prevProps.sortDirection === nextProps.sortDirection &&
       prevProps.filterValue === nextProps.filterValue &&
       prevProps.classNames === nextProps.classNames &&
-      prevProps.styles === nextProps.styles
+      prevProps.styles === nextProps.styles &&
+      prevProps.customContextMenuItems === nextProps.customContextMenuItems
     );
   },
 );

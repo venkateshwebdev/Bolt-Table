@@ -64,6 +64,33 @@ export interface ColumnType<T = unknown> {
    * `true` copies the raw value; pass a function for custom copy text.
    */
   copy?: boolean | ((value: unknown, record: T, index: number) => string);
+
+  /** Custom context menu items appended to this column's header right-click menu. */
+  columnHeaderContextMenuItems?: ColumnContextMenuItem[];
+
+  /** Custom context menu items appended to every cell's right-click menu in this column. */
+  columnCellContextMenuItems?: CellContextMenuItem<T>[];
+}
+
+/** A single item in the cell right-click context menu (column-level). */
+export interface CellContextMenuItem<T = unknown> {
+  /** Unique identifier for this menu item, used as the React `key`. */
+  key: string;
+
+  /** The label shown in the menu. Can be a string or React node. */
+  label: React.ReactNode;
+
+  /** Optional icon shown to the left of the label. */
+  icon?: React.ReactNode;
+
+  /** When `true`, the label renders in red to indicate a destructive action. */
+  danger?: boolean;
+
+  /** When `true`, the item is grayed out and click handler is not called. */
+  disabled?: boolean;
+
+  /** Called when the user clicks this menu item. Receives the column key, row record, and row index. */
+  onClick: (columnKey: string, record: T, rowIndex: number) => void;
 }
 
 /** A single item in the column header right-click context menu. */

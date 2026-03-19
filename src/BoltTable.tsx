@@ -128,8 +128,6 @@ interface BoltTableProps<T extends DataRecord = DataRecord> {
   /** When true and data is empty, shows shimmer skeleton rows. With data, appends shimmer rows at bottom. */
   readonly isLoading?: boolean;
 
-  /** Scroll indicator configuration (reserved for future use). */
-  readonly scrollIndicators?: { vertical?: boolean; horizontal?: boolean };
 
   /** Called when the user changes sort direction. Provide for server-side sorting. */
   readonly onSortChange?: (columnKey: string, direction: SortDirection) => void;
@@ -1493,7 +1491,8 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                   );
                   const hasCopy = col?.copy;
                   const hasRowPin = !!onRowPin;
-                  if (!hasCopy && !hasRowPin) return;
+                  const hasCellItems = col?.columnCellContextMenuItems && col.columnCellContextMenuItems.length > 0;
+                  if (!hasCopy && !hasRowPin && !hasCellItems) return;
 
                   e.preventDefault();
                   setCellContextMenu({
@@ -1524,7 +1523,8 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                     );
                     const hasCopy = col?.copy;
                     const hasRowPin = !!onRowPin;
-                    if (!hasCopy && !hasRowPin) return;
+                    const hasCellItems = col?.columnCellContextMenuItems && col.columnCellContextMenuItems.length > 0;
+                    if (!hasCopy && !hasRowPin && !hasCellItems) return;
                     setCellContextMenu({
                       x: Math.min(touch.clientX, window.innerWidth - 200),
                       y: Math.min(touch.clientY, window.innerHeight - 200),
@@ -1667,7 +1667,11 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                         filterValue={columnFilters[column.key] ?? ''}
                         onFilter={handleColumnFilter}
                         onClearFilter={handleClearFilter}
-                        customContextMenuItems={columnContextMenuItems}
+                        customContextMenuItems={
+                          column.columnHeaderContextMenuItems
+                            ? [...(columnContextMenuItems ?? []), ...column.columnHeaderContextMenuItems]
+                            : columnContextMenuItems
+                        }
                       />
                     );
                   })}
@@ -1753,6 +1757,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
               </div>
             </div>
           )}
+
         </div>
 
         {pgEnabled && (
@@ -2196,6 +2201,45 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                   )}
                   Copy
                 </button>
+              )}
+
+              {menuCol?.columnCellContextMenuItems && menuCol.columnCellContextMenuItems.length > 0 && (
+                <>
+                  {(hasCopy || hasRowPin) && (
+                    <div
+                      style={{
+                        borderTop: '1px solid rgba(128,128,128,0.2)',
+                        margin: '4px 0',
+                      }}
+                    />
+                  )}
+                  {(menuCol.columnCellContextMenuItems as { key: string; label: React.ReactNode; icon?: React.ReactNode; danger?: boolean; disabled?: boolean; onClick: (columnKey: string, record: T, rowIndex: number) => void }[]).map((item) => (
+                    <button
+                      key={item.key}
+                      data-bt-ctx-item=""
+                      disabled={item.disabled}
+                      style={{
+                        ...btnStyle,
+                        cursor: item.disabled ? 'not-allowed' : 'pointer',
+                        opacity: item.disabled ? 0.5 : 1,
+                        color: item.danger ? '#ef4444' : 'inherit',
+                      }}
+                      onClick={() => {
+                        if (menuRecord) {
+                          item.onClick(menuCol.key, menuRecord, menuRowIndex);
+                        }
+                        setCellContextMenu(null);
+                      }}
+                    >
+                      {item.icon && (
+                        <span style={{ display: 'flex', width: 14, height: 14, alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          {item.icon}
+                        </span>
+                      )}
+                      {item.label}
+                    </button>
+                  ))}
+                </>
               )}
             </div>,
             document.body,
