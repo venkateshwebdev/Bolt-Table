@@ -146,6 +146,12 @@ interface BoltTableProps<T extends DataRecord = DataRecord> {
 
   /** Custom React node to render when the table has no data and is not loading. */
   readonly emptyRenderer?: React.ReactNode;
+
+  /** Returns a CSS class name for a given row based on its record and index. Useful for Tailwind or any CSS class-based conditional row styling. */
+  readonly rowClassName?: (record: T, index: number) => string;
+
+  /** Returns inline CSS styles for a given row based on its record and index. Useful for dynamic per-row styling. */
+  readonly rowStyle?: (record: T, index: number) => React.CSSProperties;
 }
 
 export interface ClassNamesTypes {
@@ -249,6 +255,8 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   autoHeight = true,
   layoutLoading,
   emptyRenderer,
+  rowClassName,
+  rowStyle,
 }: BoltTableProps<T>) {
   const [columns, setColumns] = useState<ColumnType<T>[]>(initialColumns);
   const [columnOrder, setColumnOrder] = useState<string[]>(() =>
@@ -1752,6 +1760,8 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                     pinnedBottomData={pinnedBottomRows as DataRecord[]}
                     gridTemplateColumns={gridTemplateColumns}
                     headerHeight={HEADER_HEIGHT}
+                    rowClassName={rowClassName as ((record: DataRecord, index: number) => string) | undefined}
+                    rowStyle={rowStyle as ((record: DataRecord, index: number) => React.CSSProperties) | undefined}
                   />
                 )}
               </div>

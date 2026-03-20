@@ -80,6 +80,12 @@ interface TableBodyProps {
 
   /** Height of the column header row in pixels */
   headerHeight?: number;
+
+  /** Returns a CSS class name for a given row based on its record and index */
+  rowClassName?: (record: DataRecord, index: number) => string;
+
+  /** Returns inline CSS styles for a given row based on its record and index */
+  rowStyle?: (record: DataRecord, index: number) => React.CSSProperties;
 }
 
 const SHIMMER_WIDTHS = [55, 70, 45, 80, 60, 50, 75, 65];
@@ -365,6 +371,8 @@ const TableBody: React.FC<TableBodyProps> = ({
   pinnedBottomData = [],
   gridTemplateColumns,
   headerHeight = 36,
+  rowClassName,
+  rowStyle,
 }) => {
   const virtualItems = rowVirtualizer.getVirtualItems();
   const totalSize = rowVirtualizer.getTotalSize();
@@ -434,6 +442,9 @@ const TableBody: React.FC<TableBodyProps> = ({
                 ? JSON.stringify(row)
                 : undefined;
 
+              const rowCls = rowClassName ? rowClassName(row, virtualRow.index) : '';
+              const rowSty = rowStyle ? rowStyle(row, virtualRow.index) : undefined;
+
               return (
                 <div
                   key={`${rowKey}-${col.key}`}
@@ -441,12 +452,14 @@ const TableBody: React.FC<TableBodyProps> = ({
                   data-column-key={col.key}
                   data-bt-cell=""
                   data-selected={isSelected || undefined}
+                  className={rowCls || undefined}
                   style={{
                     position: 'absolute',
                     top: `${virtualRow.start}px`,
                     left: 0,
                     right: 0,
                     height: `${virtualRow.size}px`,
+                    ...rowSty,
                   }}
                 >
                   <div
@@ -578,10 +591,13 @@ const TableBody: React.FC<TableBodyProps> = ({
               const isSelected = selectedKeySet.has(rk);
               const isExpanded = resolvedExpandedKeys?.has(rk) ?? false;
 
+              const rowCls = rowClassName ? rowClassName(row, rowIdx) : '';
+              const rowSty = rowStyle ? rowStyle(row, rowIdx) : undefined;
+
               return (
                 <div
                   key={`pinned-top-${rk}`}
-                  className={classNames?.pinnedRow ?? ''}
+                  className={`${classNames?.pinnedRow ?? ''} ${rowCls}`.trim() || undefined}
                   style={{
                     display: 'grid',
                     gridTemplateColumns: gridTemplateColumns ?? '',
@@ -589,6 +605,7 @@ const TableBody: React.FC<TableBodyProps> = ({
                       ? `${totalTableWidth}px`
                       : undefined,
                     ...styles?.pinnedRow,
+                    ...rowSty,
                   }}
                 >
                   {orderedColumns.map((col) => {
@@ -697,10 +714,13 @@ const TableBody: React.FC<TableBodyProps> = ({
               const isSelected = selectedKeySet.has(rk);
               const isExpanded = resolvedExpandedKeys?.has(rk) ?? false;
 
+              const rowCls = rowClassName ? rowClassName(row, rowIdx) : '';
+              const rowSty = rowStyle ? rowStyle(row, rowIdx) : undefined;
+
               return (
                 <div
                   key={`pinned-bottom-${rk}`}
-                  className={classNames?.pinnedRow ?? ''}
+                  className={`${classNames?.pinnedRow ?? ''} ${rowCls}`.trim() || undefined}
                   style={{
                     display: 'grid',
                     gridTemplateColumns: gridTemplateColumns ?? '',
@@ -708,6 +728,7 @@ const TableBody: React.FC<TableBodyProps> = ({
                       ? `${totalTableWidth}px`
                       : undefined,
                     ...styles?.pinnedRow,
+                    ...rowSty,
                   }}
                 >
                   {orderedColumns.map((col) => {
