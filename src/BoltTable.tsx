@@ -221,10 +221,12 @@ export interface StylesTypes {
 const SHIMMER_WIDTHS = [55, 70, 45, 80, 60, 50, 75, 65, 40, 72];
 const EMPTY_CLASSNAMES: ClassNamesTypes = {};
 const EMPTY_STYLES: StylesTypes = {};
+const STABLE_EMPTY_DATA: readonly any[] = [];
+const STABLE_EMPTY_COLS: readonly any[] = [];
 
 export default function BoltTable<T extends DataRecord = DataRecord>({
-  columns: initialColumns,
-  data,
+  columns: rawInitialColumns,
+  data: rawData,
   rowHeight = 40,
   expandedRowHeight = 200,
   maxExpandedRowHeight,
@@ -258,6 +260,20 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   rowClassName,
   rowStyle,
 }: BoltTableProps<T>) {
+  const data = useMemo<T[]>(() => {
+    if (!Array.isArray(rawData)) return STABLE_EMPTY_DATA as T[];
+    const filtered = rawData.filter((item): item is T => item != null);
+    return filtered.length > 0 ? filtered : (STABLE_EMPTY_DATA as T[]);
+  }, [rawData]);
+
+  const initialColumns = useMemo<ColumnType<T>[]>(() => {
+    if (!Array.isArray(rawInitialColumns)) return STABLE_EMPTY_COLS as ColumnType<T>[];
+    const filtered = rawInitialColumns.filter(
+      (col): col is ColumnType<T> => col != null && typeof col.key === 'string',
+    );
+    return filtered.length > 0 ? filtered : (STABLE_EMPTY_COLS as ColumnType<T>[]);
+  }, [rawInitialColumns]);
+
   const [columns, setColumns] = useState<ColumnType<T>[]>(initialColumns);
   const [columnOrder, setColumnOrder] = useState<string[]>(() =>
     initialColumns.map((c) => c.key),
@@ -306,10 +322,13 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   const [internalExpandedKeys, setInternalExpandedKeys] = useState<
     Set<React.Key>
   >(() => {
-    if (expandable?.defaultExpandAllRows) {
+    if (expandable?.defaultExpandAllRows && data.length > 0) {
       return new Set(
         data.map((row, idx) => {
-          if (typeof rowKey === 'function') return rowKey(row);
+          if (row == null) return idx;
+          try {
+            if (typeof rowKey === 'function') return rowKey(row);
+          } catch { return idx; }
           if (typeof rowKey === 'string')
             return (row[rowKey] as React.Key) ?? idx;
           return idx;
@@ -350,10 +369,15 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
 
   const getRowKey = useCallback(
     (record: T, index: number): string => {
-      if (typeof rowKey === 'function') return String(rowKey(record));
-      if (typeof rowKey === 'string') {
-        const val = record[rowKey];
-        return val !== undefined && val !== null ? String(val) : String(index);
+      if (record == null) return String(index);
+      try {
+        if (typeof rowKey === 'function') return String(rowKey(record));
+        if (typeof rowKey === 'string') {
+          const val = record[rowKey];
+          return val != null ? String(val) : String(index);
+        }
+      } catch {
+        return String(index);
       }
       return String(index);
     },
@@ -361,12 +385,26 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   );
 
   const normalizedSelectedKeys = useMemo<string[]>(
-    () => (rowSelection?.selectedRowKeys ?? []).map((k) => String(k)),
+    () => {
+      const keys = rowSelection?.selectedRowKeys;
+      if (!Array.isArray(keys)) return [];
+      return keys.filter((k) => k != null).map((k) => String(k));
+    },
     [rowSelection?.selectedRowKeys],
   );
 
+  const getRowKeyRef = useRef(getRowKey);
+  getRowKeyRef.current = getRowKey;
+  const resolvedExpandedKeysRef = useRef(resolvedExpandedKeys);
+  resolvedExpandedKeysRef.current = resolvedExpandedKeys;
+  const toggleExpandRef = useRef(toggleExpand);
+  toggleExpandRef.current = toggleExpand;
+  const iconsRef = useRef(icons);
+  iconsRef.current = icons;
+
+  const hasExpandable = !!expandable?.rowExpandable;
   const columnsWithExpand = useMemo(() => {
-    if (!expandable?.rowExpandable) return columnsWithPersistedWidths;
+    if (!hasExpandable) return columnsWithPersistedWidths;
 
     const expandColumn: ColumnType<T> = {
       key: '__expand__',
@@ -376,20 +414,20 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
       pinned: 'left',
       hidden: false,
       render: (_, record, index) => {
-        const key = getRowKey(record, index);
-        const canExpand = expandable.rowExpandable?.(record) ?? true;
-        const isExpanded = resolvedExpandedKeys.has(key);
+        const key = getRowKeyRef.current(record, index);
+        const canExpand = expandableRef.current?.rowExpandable?.(record) ?? true;
+        const isExpanded = resolvedExpandedKeysRef.current.has(key);
 
         if (!canExpand)
           return <span style={{ display: 'inline-block', width: 16 }} />;
 
-        if (typeof (expandable as any).expandIcon === 'function') {
-          return (expandable as { expandIcon?: (args: any) => React.ReactNode })
+        if (typeof (expandableRef.current as any)?.expandIcon === 'function') {
+          return (expandableRef.current as { expandIcon?: (args: any) => React.ReactNode })
             .expandIcon!({
             expanded: isExpanded,
             onExpand: (_: T, e: React.MouseEvent) => {
               e.stopPropagation();
-              toggleExpand(key);
+              toggleExpandRef.current(key);
             },
             record,
           });
@@ -399,7 +437,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              toggleExpand(key);
+              toggleExpandRef.current(key);
             }}
             style={{
               display: 'flex',
@@ -414,22 +452,15 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
             }}
           >
             {isExpanded
-              ? (icons?.chevronDown ?? <ChevronDownIcon style={{ width: 14, height: 14 }} />)
-              : (icons?.chevronRight ?? <ChevronRightIcon style={{ width: 14, height: 14 }} />)}
+              ? (iconsRef.current?.chevronDown ?? <ChevronDownIcon style={{ width: 14, height: 14 }} />)
+              : (iconsRef.current?.chevronRight ?? <ChevronRightIcon style={{ width: 14, height: 14 }} />)}
           </button>
         );
       },
     };
 
     return [expandColumn, ...columnsWithPersistedWidths];
-  }, [
-    expandable,
-    columnsWithPersistedWidths,
-    getRowKey,
-    resolvedExpandedKeys,
-    toggleExpand,
-    accentColor,
-  ]);
+  }, [hasExpandable, columnsWithPersistedWidths, accentColor]);
 
   const columnsWithSelection = useMemo(() => {
     if (!rowSelection) return columnsWithExpand;
@@ -907,16 +938,21 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     if (!onFilterChangeRef.current) {
       const filterKeys = Object.keys(columnFilters);
       if (filterKeys.length > 0) {
-        result = result.filter((row) =>
-          filterKeys.every((key) => {
-            const col = columnsLookupRef.current.find((c) => c.key === key);
-            if (typeof col?.filterFn === 'function') {
-              return col.filterFn(columnFilters[key], row, col.dataIndex);
+        result = result.filter((row) => {
+          if (row == null) return false;
+          return filterKeys.every((key) => {
+            try {
+              const col = columnsLookupRef.current.find((c) => c.key === key);
+              if (typeof col?.filterFn === 'function') {
+                return col.filterFn(columnFilters[key], row, col.dataIndex);
+              }
+              const cellVal = String(row[key] ?? '').toLowerCase();
+              return cellVal.includes(columnFilters[key].toLowerCase());
+            } catch {
+              return true;
             }
-            const cellVal = String(row[key] ?? '').toLowerCase();
-            return cellVal.includes(columnFilters[key].toLowerCase());
-          }),
-        );
+          });
+        });
       }
     }
 
@@ -925,20 +961,32 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
       const key = sortState.key;
       const col = columnsLookupRef.current.find((c) => c.key === key);
 
-      if (typeof col?.sorter === 'function') {
-        const sorterFn = col.sorter;
-        result = [...result].sort((a, b) => sorterFn(a, b) * dir);
-      } else {
-        result = [...result].sort((a, b) => {
-          const aVal = a[key];
-          const bVal = b[key];
-          if (aVal == null && bVal == null) return 0;
-          if (aVal == null) return 1;
-          if (bVal == null) return -1;
-          if (typeof aVal === 'number' && typeof bVal === 'number')
-            return (aVal - bVal) * dir;
-          return String(aVal).localeCompare(String(bVal)) * dir;
-        });
+      try {
+        if (typeof col?.sorter === 'function') {
+          const sorterFn = col.sorter;
+          result = [...result].sort((a, b) => {
+            if (a == null && b == null) return 0;
+            if (a == null) return 1;
+            if (b == null) return -1;
+            return sorterFn(a, b) * dir;
+          });
+        } else {
+          result = [...result].sort((a, b) => {
+            if (a == null && b == null) return 0;
+            if (a == null) return 1;
+            if (b == null) return -1;
+            const aVal = a[key];
+            const bVal = b[key];
+            if (aVal == null && bVal == null) return 0;
+            if (aVal == null) return 1;
+            if (bVal == null) return -1;
+            if (typeof aVal === 'number' && typeof bVal === 'number')
+              return (aVal - bVal) * dir;
+            return String(aVal).localeCompare(String(bVal)) * dir;
+          });
+        }
+      } catch {
+        // If sort comparator throws, return unsorted data
       }
     }
 
@@ -966,6 +1014,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
       const rest: T[] = [];
 
       processedData.forEach((row, idx) => {
+        if (row == null) return;
         const key = getRowKey(row as T, idx);
         if (topKeySet.has(key)) topMap.set(key, row as T);
         else if (bottomKeySet.has(key)) bottomMap.set(key, row as T);
@@ -1055,7 +1104,8 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   const [internalPage, setInternalPage] = useState(1);
   const [internalPageSize, setInternalPageSize] = useState(DEFAULT_PAGE_SIZE);
 
-  const autoPagination = pagination === undefined && data.length > DEFAULT_PAGE_SIZE;
+  const dataLength = data.length;
+  const autoPagination = pagination === undefined && dataLength > DEFAULT_PAGE_SIZE;
   const pgEnabled = pagination === false ? false : (!!pagination || autoPagination);
   const pgSize = pgEnabled && typeof pagination === 'object' && pagination?.pageSize !== undefined
     ? pagination.pageSize
@@ -1075,29 +1125,31 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
 
   const shimmerCount = pgEnabled ? pgSize : 15;
   const showShimmer = isLoading && processedData.length === 0;
+  const shimmerRowKeyField = typeof rowKey === 'string' ? rowKey : 'id';
   const shimmerData = useMemo(() => {
     if (!showShimmer) return null;
     return Array.from(
       { length: shimmerCount },
       (_, i) =>
         ({
-          [typeof rowKey === 'string' ? rowKey : 'id']: `__shimmer_${i}__`,
+          [shimmerRowKeyField]: `__shimmer_${i}__`,
         }) as T,
     );
-  }, [showShimmer, shimmerCount, rowKey]);
+  }, [showShimmer, shimmerCount, shimmerRowKeyField]);
 
   const INFINITE_SHIMMER_COUNT = 5;
+  const showInfiniteShimmer =
+    isLoading && paginatedData.length > 0 && !showShimmer && !pgEnabled;
   const infiniteLoadingShimmer = useMemo(() => {
-    if (!isLoading || paginatedData.length === 0 || showShimmer) return null;
-    if (pgEnabled) return null;
+    if (!showInfiniteShimmer) return null;
     return Array.from(
       { length: INFINITE_SHIMMER_COUNT },
       (_, i) =>
         ({
-          [typeof rowKey === 'string' ? rowKey : 'id']: `__shimmer_${i}__`,
+          [shimmerRowKeyField]: `__shimmer_${i}__`,
         }) as T,
     );
-  }, [isLoading, paginatedData.length, showShimmer, pgEnabled, rowKey]);
+  }, [showInfiniteShimmer, shimmerRowKeyField]);
 
   const displayData = useMemo(() => {
     if (shimmerData) return shimmerData;
@@ -1132,16 +1184,20 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     getScrollElement: () => tableAreaRef.current,
     estimateSize: (index) => {
       if (shimmerData) return rowHeight;
-      const key = getRowKey(displayData[index], index);
+      const item = displayData[index];
+      if (!item) return rowHeight;
+      const key = getRowKey(item, index);
       if (!resolvedExpandedKeys.has(key)) return rowHeight;
       const cached = measuredExpandedHeights.current.get(key);
       return cached ? rowHeight + cached : rowHeight + expandedRowHeight;
     },
     overscan: 5,
-    getItemKey: (index) =>
-      shimmerData
-        ? `__shimmer_${index}__`
-        : getRowKey(displayData[index], index),
+    getItemKey: (index) => {
+      if (shimmerData) return `__shimmer_${index}__`;
+      const item = displayData[index];
+      if (!item) return `__fallback_${index}__`;
+      return getRowKey(item, index);
+    },
     paddingStart: pinnedTopHeight,
     paddingEnd: pinnedBottomHeight,
   });
@@ -1168,7 +1224,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
       endReachedFiredRef.current = false;
     }, 200);
     return () => clearTimeout(timer);
-  }, [data.length, isLoading]);
+  }, [dataLength, isLoading]);
 
   React.useEffect(() => {
     const el = tableAreaRef.current;
@@ -1206,8 +1262,8 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
 
   const rawTotal = pgEnabled
     ? ((typeof pagination === 'object' ? pagination?.total : undefined) ??
-      (needsClientPagination ? unpinnedProcessedData.length : data.length))
-    : data.length;
+      (needsClientPagination ? unpinnedProcessedData.length : dataLength))
+    : dataLength;
 
   const lastKnownTotalRef = useRef<number>(0);
   if (!isLoading || rawTotal > 0) {
@@ -1221,8 +1277,8 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   React.useEffect(() => {
-    if (internalPage > totalPages) {
-      setInternalPage(Math.max(1, totalPages));
+    if (totalPages > 0 && internalPage > totalPages) {
+      setInternalPage(totalPages);
     }
   }, [totalPages, internalPage]);
 
@@ -1583,15 +1639,15 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                               <input
                                 type="checkbox"
                                 checked={
-                                  data.length > 0 &&
-                                  normalizedSelectedKeys.length === data.length
+                                  dataLength > 0 &&
+                                  normalizedSelectedKeys.length === dataLength
                                 }
                                 ref={(input) => {
                                   if (input) {
                                     input.indeterminate =
                                       normalizedSelectedKeys.length > 0 &&
                                       normalizedSelectedKeys.length <
-                                        data.length;
+                                        dataLength;
                                   }
                                 }}
                                 onChange={(e) => {
@@ -2072,6 +2128,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
             ...pinnedBottomRows,
           ];
           for (let i = 0; i < allRows.length; i++) {
+            if (allRows[i] == null) continue;
             const rk = getRowKey(allRows[i], i);
             if (rk === cellContextMenu.rowKey) {
               menuRecord = allRows[i];

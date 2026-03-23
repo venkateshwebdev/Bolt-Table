@@ -243,9 +243,16 @@ const Cell = React.memo(
       );
     }
 
-    const content = column.render
-      ? column.render(value, record, rowIndex)
-      : ((value as React.ReactNode) ?? '');
+    let content: React.ReactNode;
+    if (column.render) {
+      try {
+        content = column.render(value, record, rowIndex);
+      } catch {
+        content = String(value ?? '');
+      }
+    } else {
+      content = (value as React.ReactNode) ?? '';
+    }
 
     const isSystem = column.key === '__select__' || column.key === '__expand__';
 
@@ -378,17 +385,20 @@ const TableBody: React.FC<TableBodyProps> = ({
   const totalSize = rowVirtualizer.getTotalSize();
   const selectedKeySet = useMemo(() => new Set(normalizedSelectedKeys), [normalizedSelectedKeys]);
 
+  const safeData = data ?? [];
+  const safeColumns = orderedColumns ?? [];
+
   const allDataForSelection = useMemo(() => {
     if (pinnedTopData.length === 0 && pinnedBottomData.length === 0)
-      return data;
-    return [...pinnedTopData, ...data, ...pinnedBottomData];
-  }, [pinnedTopData, data, pinnedBottomData]);
+      return safeData;
+    return [...pinnedTopData, ...safeData, ...pinnedBottomData];
+  }, [pinnedTopData, safeData, pinnedBottomData]);
 
   const pinnedRowBg =
     (styles as any)?.pinnedRowBg ?? (styles as any)?.pinnedBg;
 
   const columnStyles = useMemo(() => {
-    return orderedColumns.map((col, colIndex) => {
+    return safeColumns.map((col, colIndex) => {
       const stickyOffset = columnOffsets.get(col.key);
       const isPinned = Boolean(col.pinned);
 
@@ -415,12 +425,15 @@ const TableBody: React.FC<TableBodyProps> = ({
 
       return { key: col.key, style, isPinned };
     });
-  }, [orderedColumns, columnOffsets, totalSize, styles]);
+  }, [safeColumns, columnOffsets, totalSize, styles]);
+
+  if (safeData.length === 0 || safeColumns.length === 0) return null;
 
   return (
     <>
       {columnStyles.map((colStyle, colIndex) => {
-        const col = orderedColumns[colIndex];
+        const col = safeColumns[colIndex];
+        if (!col) return null;
         const hasRender = !!col.render;
 
         return (
@@ -430,7 +443,8 @@ const TableBody: React.FC<TableBodyProps> = ({
             style={colStyle.style}
           >
             {virtualItems.map((virtualRow: VirtualItem) => {
-              const row = data[virtualRow.index];
+              const row = safeData[virtualRow.index];
+              if (row == null) return null;
               const rowKey = getRowKey
                 ? getRowKey(row, virtualRow.index)
                 : String(virtualRow.index);
@@ -438,12 +452,15 @@ const TableBody: React.FC<TableBodyProps> = ({
               const isExpanded = resolvedExpandedKeys?.has(rowKey) ?? false;
               const cellValue = row[col.dataIndex];
               const isRowShimmer = isLoading || rowKey.startsWith('__shimmer_');
-              const recordFingerprint = hasRender && !isRowShimmer
-                ? JSON.stringify(row)
-                : undefined;
+              let recordFingerprint: string | undefined;
+              if (hasRender && !isRowShimmer) {
+                try { recordFingerprint = JSON.stringify(row); } catch { recordFingerprint = rowKey; }
+              }
 
-              const rowCls = rowClassName ? rowClassName(row, virtualRow.index) : '';
-              const rowSty = rowStyle ? rowStyle(row, virtualRow.index) : undefined;
+              let rowCls = '';
+              try { rowCls = rowClassName ? rowClassName(row, virtualRow.index) : ''; } catch { /* ignore */ }
+              let rowSty: React.CSSProperties | undefined;
+              try { rowSty = rowStyle ? rowStyle(row, virtualRow.index) : undefined; } catch { /* ignore */ }
 
               return (
                 <div
@@ -506,12 +523,18 @@ const TableBody: React.FC<TableBodyProps> = ({
           }}
         >
           {virtualItems.map((virtualRow: VirtualItem) => {
-            const row = data[virtualRow.index];
+            const row = safeData[virtualRow.index];
+            if (row == null) return null;
             const rk = getRowKey
               ? getRowKey(row, virtualRow.index)
               : String(virtualRow.index);
 
             if (!(resolvedExpandedKeys?.has(rk) ?? false)) return null;
+
+            let expandedRenderResult: React.ReactNode = null;
+            try {
+              expandedRenderResult = expandable.expandedRowRender(row, virtualRow.index, 0, true);
+            } catch { /* gracefully swallow render errors in expanded content */ }
 
             const expandedContent = (
               <div
@@ -535,7 +558,7 @@ const TableBody: React.FC<TableBodyProps> = ({
                   ...styles?.expandedRow,
                 }}
               >
-                {expandable.expandedRowRender(row, virtualRow.index, 0, true)}
+                {expandedRenderResult}
               </div>
             );
 
@@ -585,14 +608,17 @@ const TableBody: React.FC<TableBodyProps> = ({
             }}
           >
             {pinnedTopData.map((row, rowIdx) => {
+              if (row == null) return null;
               const rk = getRowKey
                 ? getRowKey(row, rowIdx)
                 : String(rowIdx);
               const isSelected = selectedKeySet.has(rk);
               const isExpanded = resolvedExpandedKeys?.has(rk) ?? false;
 
-              const rowCls = rowClassName ? rowClassName(row, rowIdx) : '';
-              const rowSty = rowStyle ? rowStyle(row, rowIdx) : undefined;
+              let rowCls = '';
+              try { rowCls = rowClassName ? rowClassName(row, rowIdx) : ''; } catch { /* ignore */ }
+              let rowSty: React.CSSProperties | undefined;
+              try { rowSty = rowStyle ? rowStyle(row, rowIdx) : undefined; } catch { /* ignore */ }
 
               return (
                 <div
@@ -608,7 +634,7 @@ const TableBody: React.FC<TableBodyProps> = ({
                     ...rowSty,
                   }}
                 >
-                  {orderedColumns.map((col) => {
+                  {safeColumns.map((col) => {
                     const cellValue = row[col.dataIndex];
                     const stickyOffset = columnOffsets.get(col.key);
                     const isPinned = Boolean(col.pinned);
@@ -620,9 +646,10 @@ const TableBody: React.FC<TableBodyProps> = ({
                       zIndex = 11;
                     else if (isPinned) zIndex = 2;
 
-                    const recordFingerprint = col.render
-                      ? JSON.stringify(row)
-                      : undefined;
+                    let recordFingerprint: string | undefined;
+                    if (col.render) {
+                      try { recordFingerprint = JSON.stringify(row); } catch { recordFingerprint = rk; }
+                    }
 
                     return (
                       <div
@@ -708,14 +735,17 @@ const TableBody: React.FC<TableBodyProps> = ({
             }}
           >
             {pinnedBottomData.map((row, rowIdx) => {
+              if (row == null) return null;
               const rk = getRowKey
                 ? getRowKey(row, rowIdx)
                 : String(rowIdx);
               const isSelected = selectedKeySet.has(rk);
               const isExpanded = resolvedExpandedKeys?.has(rk) ?? false;
 
-              const rowCls = rowClassName ? rowClassName(row, rowIdx) : '';
-              const rowSty = rowStyle ? rowStyle(row, rowIdx) : undefined;
+              let rowCls = '';
+              try { rowCls = rowClassName ? rowClassName(row, rowIdx) : ''; } catch { /* ignore */ }
+              let rowSty: React.CSSProperties | undefined;
+              try { rowSty = rowStyle ? rowStyle(row, rowIdx) : undefined; } catch { /* ignore */ }
 
               return (
                 <div
@@ -731,7 +761,7 @@ const TableBody: React.FC<TableBodyProps> = ({
                     ...rowSty,
                   }}
                 >
-                  {orderedColumns.map((col) => {
+                  {safeColumns.map((col) => {
                     const cellValue = row[col.dataIndex];
                     const stickyOffset = columnOffsets.get(col.key);
                     const isPinned = Boolean(col.pinned);
@@ -743,9 +773,10 @@ const TableBody: React.FC<TableBodyProps> = ({
                       zIndex = 11;
                     else if (isPinned) zIndex = 2;
 
-                    const recordFingerprint = col.render
-                      ? JSON.stringify(row)
-                      : undefined;
+                    let recordFingerprint: string | undefined;
+                    if (col.render) {
+                      try { recordFingerprint = JSON.stringify(row); } catch { recordFingerprint = rk; }
+                    }
 
                     return (
                       <div
