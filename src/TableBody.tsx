@@ -39,6 +39,9 @@ interface TableBodyProps {
   /** Returns the string key for a given row record and index */
   getRowKey?: (record: DataRecord, index: number) => string;
 
+  /** Returns the original-typed key for a given row record and index */
+  getRawRowKey?: (record: DataRecord, index: number) => React.Key;
+
   /** Expandable row configuration */
   expandable?: ExpandableConfig<DataRecord>;
 
@@ -104,6 +107,7 @@ interface CellProps {
   rowKey?: string;
   allData?: DataRecord[];
   getRowKey?: (record: DataRecord, index: number) => string;
+  getRawRowKey?: (record: DataRecord, index: number) => React.Key;
   accentColor?: string;
   isLoading?: boolean;
   recordFingerprint?: string;
@@ -122,6 +126,7 @@ const Cell = React.memo(
     rowKey,
     allData,
     getRowKey,
+    getRawRowKey,
     accentColor,
     isLoading,
   }: CellProps) => {
@@ -172,6 +177,8 @@ const Cell = React.memo(
         disabled: false,
       };
 
+      const rawKey: React.Key = getRawRowKey ? getRawRowKey(record, rowIndex) : rowKey!;
+
       const content =
         rowSelection.type === 'radio' ? (
           <input
@@ -181,7 +188,7 @@ const Cell = React.memo(
             onChange={(e) => {
               e.stopPropagation();
               rowSelection.onSelect?.(record, true, [record], e.nativeEvent);
-              rowSelection.onChange?.([rowKey], [record], { type: 'single' });
+              rowSelection.onChange?.([rawKey], [record], { type: 'single' });
             }}
             style={{ cursor: 'pointer', accentColor }}
           />
@@ -192,17 +199,14 @@ const Cell = React.memo(
             disabled={checkboxProps.disabled}
             onChange={(e) => {
               e.stopPropagation();
-              const currentKeys = (rowSelection.selectedRowKeys ?? []).map(
-                (k) => String(k),
-              );
+              const currentKeys = rowSelection.selectedRowKeys ?? [];
               const newSelected = isSelected
-                ? currentKeys.filter((k) => k !== rowKey)
-                : [...currentKeys, rowKey];
-              const newSelectedRows = (allData ?? []).filter((row, idx) =>
-                newSelected.includes(
-                  getRowKey ? getRowKey(row, idx) : String(idx),
-                ),
-              );
+                ? currentKeys.filter((k) => String(k) !== rowKey)
+                : [...currentKeys, rawKey];
+              const newSelectedRows = (allData ?? []).filter((row, idx) => {
+                const rk = getRowKey ? getRowKey(row, idx) : String(idx);
+                return newSelected.some((k) => String(k) === rk);
+              });
               rowSelection.onSelect?.(
                 record,
                 !isSelected,
@@ -365,6 +369,7 @@ const TableBody: React.FC<TableBodyProps> = ({
   rowSelection,
   normalizedSelectedKeys = [],
   getRowKey,
+  getRawRowKey,
   expandable,
   resolvedExpandedKeys,
   rowHeight = 40,
@@ -499,6 +504,7 @@ const TableBody: React.FC<TableBodyProps> = ({
                       rowKey={rowKey}
                       allData={allDataForSelection}
                       getRowKey={getRowKey}
+                      getRawRowKey={getRawRowKey}
                       accentColor={accentColor}
                       isLoading={isRowShimmer}
                       recordFingerprint={recordFingerprint}
@@ -697,6 +703,7 @@ const TableBody: React.FC<TableBodyProps> = ({
                             rowKey={rk}
                             allData={allDataForSelection}
                             getRowKey={getRowKey}
+                            getRawRowKey={getRawRowKey}
                             accentColor={accentColor}
                             isLoading={false}
                             recordFingerprint={recordFingerprint}
@@ -824,6 +831,7 @@ const TableBody: React.FC<TableBodyProps> = ({
                             rowKey={rk}
                             allData={allDataForSelection}
                             getRowKey={getRowKey}
+                            getRawRowKey={getRawRowKey}
                             accentColor={accentColor}
                             isLoading={false}
                             recordFingerprint={recordFingerprint}

@@ -384,6 +384,24 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     [rowKey],
   );
 
+  const getRawRowKey = useCallback(
+    (record: T, index: number): React.Key => {
+      if (record == null) return index;
+      try {
+        if (typeof rowKey === 'function') return rowKey(record);
+        if (typeof rowKey === 'string') {
+          const val = record[rowKey];
+          if (typeof val === 'number' || typeof val === 'string') return val;
+          return val != null ? String(val) : index;
+        }
+      } catch {
+        return index;
+      }
+      return index;
+    },
+    [rowKey],
+  );
+
   const normalizedSelectedKeys = useMemo<string[]>(
     () => {
       const keys = rowSelection?.selectedRowKeys;
@@ -1653,7 +1671,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                                 onChange={(e) => {
                                   if (e.target.checked) {
                                     const allKeys = data.map((row, idx) =>
-                                      getRowKey(row, idx),
+                                      getRawRowKey(row, idx),
                                     );
                                     rowSelection.onSelectAll?.(
                                       true,
@@ -1795,6 +1813,9 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                     normalizedSelectedKeys={normalizedSelectedKeys}
                     getRowKey={
                       getRowKey as (record: DataRecord, index: number) => string
+                    }
+                    getRawRowKey={
+                      getRawRowKey as (record: DataRecord, index: number) => React.Key
                     }
                     expandable={
                       !showShimmer
