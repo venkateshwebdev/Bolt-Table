@@ -63,6 +63,8 @@ interface DraggableHeaderProps {
   customContextMenuItems?: ColumnContextMenuItem[];
   /** Custom icon overrides from BoltTable's icons prop. */
   icons?: BoltTableIcons;
+  /** When true, hides the filter option from the context menu. */
+  disabledFilters?: boolean;
 }
 
 function isColumnSortable(col: ColumnType<DataRecord>): boolean {
@@ -95,9 +97,10 @@ const DraggableHeader = React.memo(
     customContextMenuItems,
     icons,
     onColumnDragStart,
+    disabledFilters,
   }: DraggableHeaderProps) => {
     const effectivelySortable = isColumnSortable(column);
-    const effectivelyFilterable = isColumnFilterable(column);
+    const effectivelyFilterable = !disabledFilters && isColumnFilterable(column);
 
     const [contextMenu, setContextMenu] = useState<{
       x: number;
@@ -390,25 +393,32 @@ const DraggableHeader = React.memo(
               }}
               role="menu"
             >
+              {(() => {
+                const ctxItemBase: CSSProperties = {
+                  cursor: 'pointer',
+                  display: 'flex',
+                  width: '100%',
+                  alignItems: 'center',
+                  gap: 8,
+                  paddingLeft: 12,
+                  paddingRight: 12,
+                  paddingTop: 6,
+                  paddingBottom: 6,
+                  textAlign: 'left' as const,
+                  background: 'none',
+                  border: 'none',
+                  fontSize: 'inherit',
+                  color: 'inherit',
+                  ...styles?.contextMenuItem,
+                };
+                return (
+                  <>
               {effectivelySortable && onSort && (
                 <>
                   <button
                     data-bt-ctx-item=""
                     style={{
-                      cursor: 'pointer',
-                      display: 'flex',
-                      width: '100%',
-                      alignItems: 'center',
-                      gap: 8,
-                      paddingLeft: 12,
-                      paddingRight: 12,
-                      paddingTop: 6,
-                      paddingBottom: 6,
-                      textAlign: 'left',
-                      background: 'none',
-                      border: 'none',
-                      fontSize: 'inherit',
-                      color: 'inherit',
+                      ...ctxItemBase,
                       fontWeight: sortDirection === 'asc' ? 600 : undefined,
                       ...(sortDirection === 'asc' ? { color: accentColor } : {}),
                     }}
@@ -423,20 +433,7 @@ const DraggableHeader = React.memo(
                   <button
                     data-bt-ctx-item=""
                     style={{
-                      cursor: 'pointer',
-                      display: 'flex',
-                      width: '100%',
-                      alignItems: 'center',
-                      gap: 8,
-                      paddingLeft: 12,
-                      paddingRight: 12,
-                      paddingTop: 6,
-                      paddingBottom: 6,
-                      textAlign: 'left',
-                      background: 'none',
-                      border: 'none',
-                      fontSize: 'inherit',
-                      color: 'inherit',
+                      ...ctxItemBase,
                       fontWeight: sortDirection === 'desc' ? 600 : undefined,
                       ...(sortDirection === 'desc' ? { color: accentColor } : {}),
                     }}
@@ -493,22 +490,7 @@ const DraggableHeader = React.memo(
                   ) : (
                     <button
                       data-bt-ctx-item=""
-                      style={{
-                        cursor: 'pointer',
-                        display: 'flex',
-                        width: '100%',
-                        alignItems: 'center',
-                        gap: 8,
-                        paddingLeft: 12,
-                        paddingRight: 12,
-                        paddingTop: 6,
-                        paddingBottom: 6,
-                        textAlign: 'left',
-                        background: 'none',
-                        border: 'none',
-                        fontSize: 'inherit',
-                        color: 'inherit',
-                      }}
+                      style={ctxItemBase}
                       onClick={() => {
                         setShowFilterInput(true);
                       }}
@@ -523,19 +505,7 @@ const DraggableHeader = React.memo(
                     <button
                       data-bt-ctx-item=""
                       style={{
-                        cursor: 'pointer',
-                        display: 'flex',
-                        width: '100%',
-                        alignItems: 'center',
-                        gap: 8,
-                        paddingLeft: 12,
-                        paddingRight: 12,
-                        paddingTop: 6,
-                        paddingBottom: 6,
-                        textAlign: 'left',
-                        background: 'none',
-                        border: 'none',
-                        fontSize: 'inherit',
+                        ...ctxItemBase,
                         color: '#ef4444',
                       }}
                       onClick={() => {
@@ -554,22 +524,7 @@ const DraggableHeader = React.memo(
 
               <button
                 data-bt-ctx-item=""
-                style={{
-                  cursor: 'pointer',
-                  display: 'flex',
-                  width: '100%',
-                  alignItems: 'center',
-                  gap: 8,
-                  paddingLeft: 12,
-                  paddingRight: 12,
-                  paddingTop: 6,
-                  paddingBottom: 6,
-                  textAlign: 'left',
-                  background: 'none',
-                  border: 'none',
-                  fontSize: 'inherit',
-                  color: 'inherit',
-                }}
+                style={ctxItemBase}
                 onClick={() => {
                   onTogglePin?.(
                     column.key,
@@ -586,22 +541,7 @@ const DraggableHeader = React.memo(
 
               <button
                 data-bt-ctx-item=""
-                style={{
-                  cursor: 'pointer',
-                  display: 'flex',
-                  width: '100%',
-                  alignItems: 'center',
-                  gap: 8,
-                  paddingLeft: 12,
-                  paddingRight: 12,
-                  paddingTop: 6,
-                  paddingBottom: 6,
-                  textAlign: 'left',
-                  background: 'none',
-                  border: 'none',
-                  fontSize: 'inherit',
-                  color: 'inherit',
-                }}
+                style={ctxItemBase}
                 onClick={() => {
                   onTogglePin?.(
                     column.key,
@@ -621,22 +561,7 @@ const DraggableHeader = React.memo(
                   <div style={{ marginTop: 4, marginBottom: 4, borderTop: '1px solid rgba(128,128,128,0.2)' }} />
                   <button
                     data-bt-ctx-item=""
-                    style={{
-                      cursor: 'pointer',
-                      display: 'flex',
-                      width: '100%',
-                      alignItems: 'center',
-                      gap: 8,
-                      paddingLeft: 12,
-                      paddingRight: 12,
-                      paddingTop: 6,
-                      paddingBottom: 6,
-                      textAlign: 'left',
-                      background: 'none',
-                      border: 'none',
-                      fontSize: 'inherit',
-                      color: 'inherit',
-                    }}
+                    style={ctxItemBase}
                     onClick={() => {
                       onToggleHide?.(column.key);
                       setContextMenu(null);
@@ -688,6 +613,9 @@ const DraggableHeader = React.memo(
                   ))}
                 </>
               )}
+                  </>
+                );
+              })()}
             </div>,
             document.body,
           )}
@@ -710,7 +638,8 @@ const DraggableHeader = React.memo(
       prevProps.filterValue === nextProps.filterValue &&
       prevProps.classNames === nextProps.classNames &&
       prevProps.styles === nextProps.styles &&
-      prevProps.customContextMenuItems === nextProps.customContextMenuItems
+      prevProps.customContextMenuItems === nextProps.customContextMenuItems &&
+      prevProps.disabledFilters === nextProps.disabledFilters
     );
   },
 );

@@ -110,8 +110,8 @@ interface BoltTableProps<T extends DataRecord = DataRecord> {
   /** Row selection configuration. Prepends a checkbox/radio column when provided. */
   readonly rowSelection?: RowSelectionConfig<T>;
 
-  /** Row pinning configuration. Specified rows render as sticky at top and/or bottom. */
-  readonly rowPinning?: RowPinningConfig;
+  /** Row pinning configuration. Pass `true` for internal state management, or an object for controlled mode. */
+  readonly rowPinning?: RowPinningConfig | boolean;
 
   /** Called when the user pins or unpins a row via the cell context menu. */
   readonly onRowPin?: (
@@ -152,6 +152,9 @@ interface BoltTableProps<T extends DataRecord = DataRecord> {
 
   /** Returns inline CSS styles for a given row based on its record and index. Useful for dynamic per-row styling. */
   readonly rowStyle?: (record: T, index: number) => React.CSSProperties;
+
+  /** When true, removes the filter option from all header column context menus. */
+  readonly disabledFilters?: boolean;
 }
 
 export interface ClassNamesTypes {
@@ -216,6 +219,9 @@ export interface StylesTypes {
 
   /** CSS color string for pinned column cells and headers background. */
   pinnedBg?: string;
+
+  /** Inline styles applied to built-in context menu items (sort, filter, pin, copy, etc.). */
+  contextMenuItem?: CSSProperties;
 }
 
 const SHIMMER_WIDTHS = [55, 70, 45, 80, 60, 50, 75, 65, 40, 72];
@@ -259,6 +265,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   emptyRenderer,
   rowClassName,
   rowStyle,
+  disabledFilters,
 }: BoltTableProps<T>) {
   const data = useMemo<T[]>(() => {
     if (!Array.isArray(rawData)) return STABLE_EMPTY_DATA as T[];
@@ -814,15 +821,11 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
       if (col.key === '__select__' || col.key === '__expand__') return col;
       const latest = latestMap.get(col.key);
       if (!latest) return col;
-      if (
-        col.render === latest.render &&
-        col.shimmerRender === latest.shimmerRender
-      )
-        return col;
       return {
-        ...col,
-        render: latest.render,
-        shimmerRender: latest.shimmerRender,
+        ...latest,
+        width: col.width,
+        hidden: col.hidden,
+        pinned: col.pinned,
       };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -885,6 +888,29 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     const column = columns.find((col) => col.key === columnKey);
     if (column && !column.pinned) onColumnHide?.(columnKey, !column.hidden);
   };
+
+  const [internalRowPinning, setInternalRowPinning] = useState<RowPinningConfig>({ top: [], bottom: [] });
+  const resolvedRowPinning: RowPinningConfig | undefined =
+    rowPinning === true ? internalRowPinning
+    : (rowPinning && typeof rowPinning === 'object') ? rowPinning
+    : undefined;
+
+  const handleRowPin = useCallback((rk: React.Key, pinned: 'top' | 'bottom' | false) => {
+    if (onRowPin) {
+      onRowPin(rk, pinned);
+      return;
+    }
+    if (rowPinning === true) {
+      setInternalRowPinning((prev) => {
+        const rkStr = String(rk);
+        const newTop = (prev.top ?? []).filter((k) => String(k) !== rkStr);
+        const newBottom = (prev.bottom ?? []).filter((k) => String(k) !== rkStr);
+        if (pinned === 'top') newTop.push(rk);
+        else if (pinned === 'bottom') newBottom.push(rk);
+        return { top: newTop, bottom: newBottom };
+      });
+    }
+  }, [onRowPin, rowPinning]);
 
   const onSortChangeRef = useRef(onSortChange);
   onSortChangeRef.current = onSortChange;
@@ -1014,8 +1040,8 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   const { pinnedTopRows, pinnedBottomRows, unpinnedProcessedData } =
     useMemo(() => {
       if (
-        !rowPinning ||
-        (!rowPinning.top?.length && !rowPinning.bottom?.length)
+        !resolvedRowPinning ||
+        (!resolvedRowPinning.top?.length && !resolvedRowPinning.bottom?.length)
       ) {
         return {
           pinnedTopRows: [] as T[],
@@ -1024,8 +1050,8 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
         };
       }
 
-      const topKeySet = new Set((rowPinning.top ?? []).map(String));
-      const bottomKeySet = new Set((rowPinning.bottom ?? []).map(String));
+      const topKeySet = new Set((resolvedRowPinning.top ?? []).map(String));
+      const bottomKeySet = new Set((resolvedRowPinning.bottom ?? []).map(String));
 
       const topMap = new Map<string, T>();
       const bottomMap = new Map<string, T>();
@@ -1039,11 +1065,11 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
         else rest.push(row as T);
       });
 
-      const orderedTop = (rowPinning.top ?? [])
+      const orderedTop = (resolvedRowPinning.top ?? [])
         .map((k) => topMap.get(String(k)))
         .filter((r): r is T => r !== undefined);
 
-      const orderedBottom = (rowPinning.bottom ?? [])
+      const orderedBottom = (resolvedRowPinning.bottom ?? [])
         .map((k) => bottomMap.get(String(k)))
         .filter((r): r is T => r !== undefined);
 
@@ -1052,18 +1078,18 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
         pinnedBottomRows: orderedBottom,
         unpinnedProcessedData: rest,
       };
-    }, [processedData, rowPinning, getRowKey]);
+    }, [processedData, resolvedRowPinning, getRowKey]);
 
   const pinnedTopHeight = pinnedTopRows.length * rowHeight;
   const pinnedBottomHeight = pinnedBottomRows.length * rowHeight;
 
   const pinnedTopKeySet = useMemo(
-    () => new Set((rowPinning?.top ?? []).map(String)),
-    [rowPinning?.top],
+    () => new Set((resolvedRowPinning?.top ?? []).map(String)),
+    [resolvedRowPinning?.top],
   );
   const pinnedBottomKeySet = useMemo(
-    () => new Set((rowPinning?.bottom ?? []).map(String)),
-    [rowPinning?.bottom],
+    () => new Set((resolvedRowPinning?.bottom ?? []).map(String)),
+    [resolvedRowPinning?.bottom],
   );
 
   const [cellContextMenu, setCellContextMenu] = useState<{
@@ -1571,8 +1597,8 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                   const col = freshOrderedColumns.find(
                     (c) => c.key === ck,
                   );
-                  const hasCopy = col?.copy;
-                  const hasRowPin = !!onRowPin;
+                  const hasCopy = !!col?.copy;
+                  const hasRowPin = !!rowPinning;
                   const hasCellItems = col?.columnCellContextMenuItems && col.columnCellContextMenuItems.length > 0;
                   if (!hasCopy && !hasRowPin && !hasCellItems) return;
 
@@ -1603,8 +1629,8 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                     const col = freshOrderedColumns.find(
                       (c) => c.key === ck,
                     );
-                    const hasCopy = col?.copy;
-                    const hasRowPin = !!onRowPin;
+                    const hasCopy = !!col?.copy;
+                    const hasRowPin = !!rowPinning;
                     const hasCellItems = col?.columnCellContextMenuItems && col.columnCellContextMenuItems.length > 0;
                     if (!hasCopy && !hasRowPin && !hasCellItems) return;
                     setCellContextMenu({
@@ -1754,6 +1780,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                             ? [...(columnContextMenuItems ?? []), ...column.columnHeaderContextMenuItems]
                             : columnContextMenuItems
                         }
+                        disabledFilters={disabledFilters}
                       />
                     );
                   })}
@@ -2138,8 +2165,8 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
           const isPinnedBottom = pinnedBottomKeySet.has(
             cellContextMenu.rowKey,
           );
-          const hasCopy = menuCol?.copy;
-          const hasRowPin = !!onRowPin;
+          const hasCopy = !!menuCol?.copy;
+          const hasRowPin = !!rowPinning;
 
           let menuRecord: T | undefined;
           let menuRowIndex = 0;
@@ -2174,6 +2201,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
             cursor: 'pointer',
             color: 'inherit',
             whiteSpace: 'nowrap',
+            ...styles.contextMenuItem,
           };
 
           return createPortal(
@@ -2201,7 +2229,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                     data-bt-ctx-item
                     style={btnStyle}
                     onClick={() => {
-                      onRowPin!(
+                      handleRowPin(
                         cellContextMenu.rowKey,
                         isPinnedTop ? false : 'top',
                       );
@@ -2226,7 +2254,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                     data-bt-ctx-item
                     style={btnStyle}
                     onClick={() => {
-                      onRowPin!(
+                      handleRowPin(
                         cellContextMenu.rowKey,
                         isPinnedBottom ? false : 'bottom',
                       );
