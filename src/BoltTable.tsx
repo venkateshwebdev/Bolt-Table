@@ -155,6 +155,12 @@ interface BoltTableProps<T extends DataRecord = DataRecord> {
 
   /** When true, removes the filter option from all header column context menus. */
   readonly disabledFilters?: boolean;
+
+  /** Called after a cell value is copied to the clipboard via the context menu. */
+  readonly onCopy?: (text: string, columnKey: string, record: T, rowIndex: number) => void;
+
+  /** When true, pinned rows remain visible even after navigating to a different page. */
+  readonly keepPinnedRowsAcrossPages?: boolean;
 }
 
 export interface ClassNamesTypes {
@@ -266,6 +272,8 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   rowClassName,
   rowStyle,
   disabledFilters,
+  onCopy,
+  keepPinnedRowsAcrossPages,
 }: BoltTableProps<T>) {
   const data = useMemo<T[]>(() => {
     if (!Array.isArray(rawData)) return STABLE_EMPTY_DATA as T[];
@@ -1037,12 +1045,15 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     return result;
   }, [data, sortState, columnFilters]);
 
+  const pinnedRowCacheRef = useRef<Map<string, T>>(new Map());
+
   const { pinnedTopRows, pinnedBottomRows, unpinnedProcessedData } =
     useMemo(() => {
       if (
         !resolvedRowPinning ||
         (!resolvedRowPinning.top?.length && !resolvedRowPinning.bottom?.length)
       ) {
+        if (keepPinnedRowsAcrossPages) pinnedRowCacheRef.current.clear();
         return {
           pinnedTopRows: [] as T[],
           pinnedBottomRows: [] as T[],
@@ -1060,10 +1071,33 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
       processedData.forEach((row, idx) => {
         if (row == null) return;
         const key = getRowKey(row as T, idx);
-        if (topKeySet.has(key)) topMap.set(key, row as T);
-        else if (bottomKeySet.has(key)) bottomMap.set(key, row as T);
-        else rest.push(row as T);
+        if (topKeySet.has(key)) {
+          topMap.set(key, row as T);
+          if (keepPinnedRowsAcrossPages) pinnedRowCacheRef.current.set(key, row as T);
+        } else if (bottomKeySet.has(key)) {
+          bottomMap.set(key, row as T);
+          if (keepPinnedRowsAcrossPages) pinnedRowCacheRef.current.set(key, row as T);
+        } else {
+          rest.push(row as T);
+        }
       });
+
+      if (keepPinnedRowsAcrossPages) {
+        for (const k of topKeySet) {
+          if (!topMap.has(k) && pinnedRowCacheRef.current.has(k)) {
+            topMap.set(k, pinnedRowCacheRef.current.get(k)!);
+          }
+        }
+        for (const k of bottomKeySet) {
+          if (!bottomMap.has(k) && pinnedRowCacheRef.current.has(k)) {
+            bottomMap.set(k, pinnedRowCacheRef.current.get(k)!);
+          }
+        }
+        const allPinnedKeys = new Set([...topKeySet, ...bottomKeySet]);
+        for (const cachedKey of pinnedRowCacheRef.current.keys()) {
+          if (!allPinnedKeys.has(cachedKey)) pinnedRowCacheRef.current.delete(cachedKey);
+        }
+      }
 
       const orderedTop = (resolvedRowPinning.top ?? [])
         .map((k) => topMap.get(String(k)))
@@ -1078,7 +1112,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
         pinnedBottomRows: orderedBottom,
         unpinnedProcessedData: rest,
       };
-    }, [processedData, resolvedRowPinning, getRowKey]);
+    }, [processedData, resolvedRowPinning, getRowKey, keepPinnedRowsAcrossPages]);
 
   const pinnedTopHeight = pinnedTopRows.length * rowHeight;
   const pinnedBottomHeight = pinnedBottomRows.length * rowHeight;
@@ -2307,6 +2341,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                           )(menuValue, menuRecord!, menuRowIndex)
                         : String(menuValue ?? '');
                     navigator.clipboard?.writeText(text);
+                    onCopy?.(text, menuCol.key, menuRecord!, menuRowIndex);
                     setCellContextMenu(null);
                   }}
                 >
