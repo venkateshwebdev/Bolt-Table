@@ -8,8 +8,8 @@ export interface ColumnType<T = unknown> {
   /** The text or React node shown in the column header. */
   title: string | ReactNode;
 
-  /** The key in the row data object whose value this column displays. */
-  dataIndex: string;
+  /** The key in the row data object whose value this column displays. Required for leaf columns; omit for group columns with `children`. */
+  dataIndex?: string;
 
   /** Fixed pixel width of this column. Defaults to `150px`; last column stretches to fill. */
   width?: number;
@@ -70,6 +70,12 @@ export interface ColumnType<T = unknown> {
 
   /** Custom context menu items appended to every cell's right-click menu in this column. */
   columnCellContextMenuItems?: CellContextMenuItem<T>[];
+
+  /** When `true`, cells without a custom `render` become inline-editable on double-click. Requires the table-level `onEdit` callback. */
+  editable?: boolean;
+
+  /** Nested child columns. When provided, this column acts as a header group and does not render data cells. Only leaf columns (without `children`) render cells. */
+  children?: ColumnType<T>[];
 }
 
 /** A single item in the cell right-click context menu (column-level). */

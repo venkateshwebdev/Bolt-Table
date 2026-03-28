@@ -29,7 +29,9 @@ A high-performance, zero-dependency\* React table component. Only the rows visib
 - **Cell context menu** — right-click (or long-press on mobile) any cell to pin rows or copy values
 - **Right-click context menu** — sort, filter, pin, hide, plus custom items
 - **Mobile-friendly context menus** — long-press (touch-and-hold) triggers context menus on touch devices
+- **Nested / grouped columns** — group related columns under a shared header spanning multiple columns
 - **Theme-agnostic** — works in light and dark mode out of the box, no CSS variables needed
+- **Editable cells** — right-click any cell on an `editable` column to inline-edit via the context menu
 - **Custom icons** — override any built-in icon via the `icons` prop
 
 ---
@@ -96,7 +98,7 @@ import { BoltTable } from 'bolt-table';
 
 BoltTable uses **inline CSS styles** for all defaults — no Tailwind, no CSS variables, no external stylesheets required. It works out of the box in any React project, light or dark mode.
 
-You can customize everything via the `styles` and `classNames` props. If your project uses Tailwind, you can pass Tailwind classes through `classNames` and they'll be applied on top of the inline defaults.
+You can customize everything via the `styles` and `classNames` props, including headers, cells, rows, pinned regions, and pagination. If your project uses Tailwind, you can pass Tailwind classes through `classNames` and they'll be applied on top of the inline defaults.
 
 ### Custom icons
 
@@ -114,7 +116,7 @@ import type { BoltTableIcons } from 'bolt-table';
 />
 ```
 
-Available icon keys: `gripVertical`, `sortAsc`, `sortDesc`, `filter`, `filterClear`, `pin`, `pinOff`, `eyeOff`, `chevronDown`, `chevronLeft`, `chevronRight`, `chevronsLeft`, `chevronsRight`, `copy`.
+Available icon keys: `gripVertical`, `sortAsc`, `sortDesc`, `filter`, `filterClear`, `pin`, `pinOff`, `eyeOff`, `chevronDown`, `chevronLeft`, `chevronRight`, `chevronsLeft`, `chevronsRight`, `copy`, `edit`.
 
 ---
 
@@ -156,6 +158,12 @@ Available icon keys: `gripVertical`, `sortAsc`, `sortDesc`, `filter`, `filterCle
 | `autoHeight` | `boolean` | `true` | Auto-size table height to content (capped at 10 rows) |
 | `layoutLoading` | `boolean` | `false` | Show full skeleton layout (headers + rows) |
 | `emptyRenderer` | `ReactNode` | — | Custom empty state content |
+| `rowClassName` | `(record, index) => string` | — | Returns a CSS class name for conditional row styling |
+| `rowStyle` | `(record, index) => CSSProperties` | — | Returns inline styles for conditional row styling |
+| `disabledFilters` | `boolean` | `false` | Removes the filter option from all header context menus |
+| `onCopy` | `(text, columnKey, record, rowIndex) => void` | — | Called after a cell value is copied to the clipboard |
+| `keepPinnedRowsAcrossPages` | `boolean` | `false` | Pinned rows remain visible after navigating to a different page |
+| `onEdit` | `(value, record, dataIndex, rowIndex) => void` | — | Called when a user finishes editing an editable cell |
 
 ---
 
@@ -164,7 +172,7 @@ Available icon keys: `gripVertical`, `sortAsc`, `sortDesc`, `filter`, `filterCle
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `key` | `string` | — | Unique column identifier (required) |
-| `dataIndex` | `string` | — | Row object property to display (required) |
+| `dataIndex` | `string` | — | Row object property to display (required for leaf columns, omit for groups) |
 | `title` | `string \| ReactNode` | — | Header label (required) |
 | `width` | `number` | `150` | Column width in pixels |
 | `render` | `(value, record, index) => ReactNode` | — | Custom cell renderer |
@@ -178,6 +186,8 @@ Available icon keys: `gripVertical`, `sortAsc`, `sortDesc`, `filter`, `filterCle
 | `className` | `string` | — | Class applied to all cells in this column |
 | `style` | `CSSProperties` | — | Styles applied to all cells in this column |
 | `copy` | `boolean \| (value, record, index) => string` | — | Enable "Copy" in cell context menu; function customizes what's copied |
+| `editable` | `boolean` | `false` | When `true` and no custom `render` is set, cells become inline-editable on double-click |
+| `children` | `ColumnType<T>[]` | — | Nested child columns. Makes this column a header group — only leaf columns render data |
 
 ---
 
@@ -439,6 +449,49 @@ The cell context menu only appears when there is at least one action available (
 
 ---
 
+### Editable cells
+
+Mark columns as `editable: true` and provide an `onEdit` callback to allow inline editing. Right-click (or long-press on mobile) an editable cell to see the **Edit** option (with a pencil icon) in the context menu. Selecting it turns the cell into an input field. Press **Enter** or click away to commit, **Escape** to cancel.
+
+```tsx
+const [data, setData] = useState<User[]>(initialData);
+
+const columns: ColumnType<User>[] = [
+  { key: 'name',  dataIndex: 'name',  title: 'Name',  editable: true, width: 200 },
+  { key: 'age',   dataIndex: 'age',   title: 'Age',   editable: true, width: 80  },
+  {
+    key: 'status',
+    dataIndex: 'status',
+    title: 'Status',
+    render: (value) => <span className="badge">{String(value)}</span>,
+    editable: true, // ignored — custom render takes precedence
+  },
+];
+
+<BoltTable
+  columns={columns}
+  data={data}
+  rowKey="id"
+  onEdit={(value, record, dataIndex, rowIndex) => {
+    setData(prev =>
+      prev.map((row, i) =>
+        i === rowIndex ? { ...row, [dataIndex]: value } : row
+      )
+    );
+  }}
+/>
+```
+
+The edit icon can be customized via the `icons` prop:
+
+```tsx
+<BoltTable icons={{ edit: <MyPencilIcon size={14} /> }} />
+```
+
+> **Note:** `editable` is skipped for columns that define a custom `render` function — since the cell content is fully controlled by the renderer, inline editing wouldn't know how to display or commit changes. If you need editable custom-rendered cells, handle the editing UX inside your `render` function.
+
+---
+
 ### Styling overrides
 
 ```tsx
@@ -460,6 +513,69 @@ The cell context menu only appears when there is at least one action available (
   }}
 />
 ```
+
+---
+
+### Nested / grouped columns
+
+Group related columns under a shared header. Parent columns act as header groups — only leaf columns (without `children`) render data cells. Leaf columns within groups support resizing and reordering just like standalone columns.
+
+```tsx
+const columns: ColumnType<User>[] = [
+  { key: 'id', dataIndex: 'id', title: 'ID', width: 80 },
+  {
+    key: 'nameGroup',
+    title: 'Name',
+    children: [
+      { key: 'firstName', dataIndex: 'firstName', title: 'First Name', width: 150 },
+      { key: 'lastName',  dataIndex: 'lastName',  title: 'Last Name',  width: 150 },
+    ],
+  },
+  {
+    key: 'contactGroup',
+    title: 'Contact Info',
+    children: [
+      { key: 'email', dataIndex: 'email', title: 'Email', width: 250 },
+      { key: 'phone', dataIndex: 'phone', title: 'Phone', width: 150 },
+    ],
+  },
+  { key: 'age', dataIndex: 'age', title: 'Age', width: 80 },
+];
+
+<BoltTable columns={columns} data={data} rowKey="id" />
+```
+
+The header renders two rows: group headers span their children columns in the top row, and leaf column headers appear in the bottom row. Standalone columns (not in any group) span both header rows.
+
+---
+
+### Pagination styles
+
+Customize every part of the pagination footer via `styles` and `classNames`:
+
+```tsx
+<BoltTable
+  columns={columns}
+  data={data}
+  pagination={{ pageSize: 20 }}
+  classNames={{
+    pagination: 'bg-gray-50 border-t border-gray-200',
+    paginationButton: 'rounded hover:bg-gray-200',
+    paginationActiveButton: 'font-bold text-blue-600',
+    paginationSelect: 'rounded border-gray-300',
+    paginationInfo: 'text-gray-500 text-xs',
+  }}
+  styles={{
+    pagination: { height: 40 },
+    paginationButton: { borderRadius: 4 },
+    paginationActiveButton: { fontWeight: 700 },
+    paginationSelect: { borderRadius: 4 },
+    paginationInfo: { fontSize: 11 },
+  }}
+/>
+```
+
+Available pagination style/class keys: `pagination` (wrapper), `paginationButton` (nav buttons), `paginationActiveButton` (active page), `paginationSelect` (page-size dropdown), `paginationInfo` (range text).
 
 ---
 
