@@ -17,6 +17,27 @@ function arrayMove<T>(arr: T[], from: number, to: number): T[] {
   return result;
 }
 
+function flattenColumns<T>(columns: ColumnType<T>[]): ColumnType<T>[] {
+  const result: ColumnType<T>[] = [];
+  for (const col of columns) {
+    if (col == null) continue;
+    if (col.children && col.children.length > 0) {
+      result.push(...flattenColumns(col.children));
+    } else {
+      result.push(col);
+    }
+  }
+  return result;
+}
+
+interface HeaderGroup {
+  key: string;
+  title: string | React.ReactNode;
+  childKeys: string[];
+  style?: CSSProperties;
+  className?: string;
+}
+
 import DraggableHeader from './DraggableHeader';
 import {
   type BoltTableIcons,
@@ -27,6 +48,7 @@ import {
   ChevronsRightIcon,
   CopyIcon,
   GripVerticalIcon,
+  PencilIcon,
   PinIcon,
   PinOffIcon,
 } from './icons';
@@ -161,6 +183,9 @@ interface BoltTableProps<T extends DataRecord = DataRecord> {
 
   /** When true, pinned rows remain visible even after navigating to a different page. */
   readonly keepPinnedRowsAcrossPages?: boolean;
+
+  /** Called when a user finishes editing an editable cell. Receives the new value, the row record, the column's `dataIndex`, and the row index. */
+  readonly onEdit?: (value: unknown, record: T, dataIndex: string, rowIndex: number) => void;
 }
 
 export interface ClassNamesTypes {
@@ -187,6 +212,21 @@ export interface ClassNamesTypes {
 
   /** Applied to each pinned row's wrapper div. */
   pinnedRow?: string;
+
+  /** Applied to the pagination footer wrapper. */
+  pagination?: string;
+
+  /** Applied to all pagination navigation buttons (first, prev, next, last). */
+  paginationButton?: string;
+
+  /** Applied additionally to the active page number button. */
+  paginationActiveButton?: string;
+
+  /** Applied to the page-size select dropdown. */
+  paginationSelect?: string;
+
+  /** Applied to the "X–Y of Z" info text. */
+  paginationInfo?: string;
 }
 
 export interface StylesTypes {
@@ -228,6 +268,21 @@ export interface StylesTypes {
 
   /** Inline styles applied to built-in context menu items (sort, filter, pin, copy, etc.). */
   contextMenuItem?: CSSProperties;
+
+  /** Inline styles for the pagination footer wrapper. */
+  pagination?: CSSProperties;
+
+  /** Inline styles for all pagination navigation buttons (first, prev, next, last). */
+  paginationButton?: CSSProperties;
+
+  /** Inline styles for the active page number button. */
+  paginationActiveButton?: CSSProperties;
+
+  /** Inline styles for the page-size select dropdown. */
+  paginationSelect?: CSSProperties;
+
+  /** Inline styles for the "X–Y of Z" info text. */
+  paginationInfo?: CSSProperties;
 }
 
 const SHIMMER_WIDTHS = [55, 70, 45, 80, 60, 50, 75, 65, 40, 72];
@@ -274,6 +329,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   disabledFilters,
   onCopy,
   keepPinnedRowsAcrossPages,
+  onEdit,
 }: BoltTableProps<T>) {
   const data = useMemo<T[]>(() => {
     if (!Array.isArray(rawData)) return STABLE_EMPTY_DATA as T[];
@@ -283,11 +339,48 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
 
   const initialColumns = useMemo<ColumnType<T>[]>(() => {
     if (!Array.isArray(rawInitialColumns)) return STABLE_EMPTY_COLS as ColumnType<T>[];
-    const filtered = rawInitialColumns.filter(
+    const safe = rawInitialColumns.filter(
       (col): col is ColumnType<T> => col != null && typeof col.key === 'string',
     );
-    return filtered.length > 0 ? filtered : (STABLE_EMPTY_COLS as ColumnType<T>[]);
+    const flattened = flattenColumns(safe);
+    const validated = flattened.filter(
+      (col): col is ColumnType<T> => col != null && typeof col.key === 'string',
+    );
+    return validated.length > 0 ? validated : (STABLE_EMPTY_COLS as ColumnType<T>[]);
   }, [rawInitialColumns]);
+
+  const headerGroups = useMemo<HeaderGroup[]>(() => {
+    if (!Array.isArray(rawInitialColumns)) return [];
+    const groups: HeaderGroup[] = [];
+    for (const col of rawInitialColumns) {
+      if (col != null && typeof col.key === 'string' && col.children && col.children.length > 0) {
+        const leafKeys = flattenColumns([col])
+          .filter((c) => c != null && typeof c.key === 'string')
+          .map((c) => c.key);
+        if (leafKeys.length > 0) {
+          groups.push({
+            key: col.key,
+            title: col.title,
+            childKeys: leafKeys,
+            style: col.style,
+            className: col.className,
+          });
+        }
+      }
+    }
+    return groups;
+  }, [rawInitialColumns]);
+
+  const hasColumnGroups = headerGroups.length > 0;
+
+  const groupedColumnKeySet = useMemo<Set<string> | null>(() => {
+    if (!hasColumnGroups) return null;
+    const keys = new Set<string>();
+    for (const g of headerGroups) {
+      for (const k of g.childKeys) keys.add(k);
+    }
+    return keys;
+  }, [headerGroups, hasColumnGroups]);
 
   const [columns, setColumns] = useState<ColumnType<T>[]>(initialColumns);
   const [columnOrder, setColumnOrder] = useState<string[]>(() =>
@@ -596,6 +689,18 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     currentX: number;
   } | null>(null);
 
+  const columnGroupMapRef = useRef<Map<string, string | null>>(new Map());
+  useMemo(() => {
+    const map = new Map<string, string | null>();
+    for (const g of headerGroups) {
+      for (const k of g.childKeys) map.set(k, g.key);
+    }
+    for (const col of initialColumns) {
+      if (!map.has(col.key)) map.set(col.key, null);
+    }
+    columnGroupMapRef.current = map;
+  }, [headerGroups, initialColumns]);
+
   const overIdRef = useRef<string | null>(null);
   const dragActiveIdRef = useRef<string | null>(null);
   const ghostRef = useRef<HTMLDivElement>(null);
@@ -630,6 +735,8 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
       grabStyle.textContent = '* { cursor: grabbing !important; }';
       document.head.appendChild(grabStyle);
 
+      const draggedGroup = columnGroupMapRef.current.get(columnKey);
+
       const onMove = (ev: PointerEvent) => {
         if (ghost) {
           ghost.style.left = `${ev.clientX - offsetX}px`;
@@ -648,6 +755,11 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
             key === '__expand__' ||
             key === columnKey
           ) {
+            h.removeAttribute('data-drag-over');
+            return;
+          }
+          const targetGroup = columnGroupMapRef.current.get(key);
+          if (draggedGroup !== targetGroup) {
             h.removeAttribute('data-drag-over');
             return;
           }
@@ -687,7 +799,8 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
         if (
           currentOverId &&
           currentActiveId &&
-          currentOverId !== currentActiveId
+          currentOverId !== currentActiveId &&
+          columnGroupMapRef.current.get(currentActiveId) === columnGroupMapRef.current.get(currentOverId)
         ) {
           React.startTransition(() => {
             setColumnOrder((items) => {
@@ -996,7 +1109,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
             try {
               const col = columnsLookupRef.current.find((c) => c.key === key);
               if (typeof col?.filterFn === 'function') {
-                return col.filterFn(columnFilters[key], row, col.dataIndex);
+                return col.filterFn(columnFilters[key], row, col.dataIndex ?? key);
               }
               const cellVal = String(row[key] ?? '').toLowerCase();
               return cellVal.includes(columnFilters[key].toLowerCase());
@@ -1125,6 +1238,15 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     () => new Set((resolvedRowPinning?.bottom ?? []).map(String)),
     [resolvedRowPinning?.bottom],
   );
+
+  const [editingCell, setEditingCell] = useState<{
+    rowKey: string;
+    columnKey: string;
+  } | null>(null);
+
+  const handleEditComplete = useCallback(() => {
+    setEditingCell(null);
+  }, []);
 
   const [cellContextMenu, setCellContextMenu] = useState<{
     x: number;
@@ -1410,7 +1532,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
     ];
   };
 
-  const HEADER_HEIGHT = 36;
+  const HEADER_HEIGHT = hasColumnGroups ? 72 : 36;
   const MAX_AUTO_ROWS = 10;
   const virtualTotalSize = rowVirtualizer.getTotalSize();
   const naturalContentHeight = virtualTotalSize + HEADER_HEIGHT;
@@ -1613,7 +1735,9 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                 style={{
                   display: 'grid',
                   gridTemplateColumns,
-                  gridTemplateRows: isEmpty ? '36px 1fr' : `36px ${virtualTotalSize}px`,
+                  gridTemplateRows: isEmpty
+                    ? (hasColumnGroups ? '36px 36px 1fr' : '36px 1fr')
+                    : (hasColumnGroups ? `36px 36px ${virtualTotalSize}px` : `36px ${virtualTotalSize}px`),
                   minWidth: `${totalTableWidth}px`,
                   width: '100%',
                   position: 'relative',
@@ -1634,7 +1758,8 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                   const hasCopy = !!col?.copy;
                   const hasRowPin = !!rowPinning;
                   const hasCellItems = col?.columnCellContextMenuItems && col.columnCellContextMenuItems.length > 0;
-                  if (!hasCopy && !hasRowPin && !hasCellItems) return;
+                  const hasEdit = !!col?.editable && !col?.render && !!onEdit;
+                  if (!hasCopy && !hasRowPin && !hasCellItems && !hasEdit) return;
 
                   e.preventDefault();
                   setCellContextMenu({
@@ -1666,7 +1791,8 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                     const hasCopy = !!col?.copy;
                     const hasRowPin = !!rowPinning;
                     const hasCellItems = col?.columnCellContextMenuItems && col.columnCellContextMenuItems.length > 0;
-                    if (!hasCopy && !hasRowPin && !hasCellItems) return;
+                    const hasEdit = !!col?.editable && !col?.render && !!onEdit;
+                    if (!hasCopy && !hasRowPin && !hasCellItems && !hasEdit) return;
                     setCellContextMenu({
                       x: Math.min(touch.clientX, window.innerWidth - 200),
                       y: Math.min(touch.clientY, window.innerHeight - 200),
@@ -1686,7 +1812,55 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                 onTouchEnd={cancelCellLongPress}
                 onTouchCancel={cancelCellLongPress}
               >
+                {hasColumnGroups && headerGroups.map((group) => {
+                    let minIdx = Infinity;
+                    let maxIdx = -1;
+                    orderedColumns.forEach((col, idx) => {
+                      if (group.childKeys.includes(col.key)) {
+                        minIdx = Math.min(minIdx, idx);
+                        maxIdx = Math.max(maxIdx, idx);
+                      }
+                    });
+                    if (minIdx === Infinity) return null;
+
+                    return (
+                      <div
+                        key={`group-${group.key}`}
+                        data-bt-header=""
+                        className={`${group.className ?? ''} ${classNames.header ?? ''}`}
+                        style={{
+                          gridColumn: `${minIdx + 1} / ${maxIdx + 2}`,
+                          gridRow: 1,
+                          position: 'sticky',
+                          top: 0,
+                          zIndex: 10,
+                          display: 'flex',
+                          height: 36,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap' as const,
+                          borderBottom: '1px solid rgba(128,128,128,0.2)',
+                          fontWeight: 500,
+                          userSelect: 'none',
+                          ...group.style,
+                          ...styles.header,
+                        }}
+                      >
+                        {group.title}
+                      </div>
+                    );
+                  })}
+
                   {orderedColumns.map((column, visualIndex) => {
+                    const isInGroup = groupedColumnKeySet?.has(column.key) ?? false;
+                    const leafGridRow = hasColumnGroups
+                      ? (isInGroup ? 2 : '1 / 3')
+                      : 1;
+                    const leafHeight = hasColumnGroups && !isInGroup ? 72 : 36;
+                    const leafStickyTop = hasColumnGroups && isInGroup ? 36 : 0;
+
                     if (column.key === '__select__' && rowSelection) {
                       return (
                         <div
@@ -1696,7 +1870,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                           className={`${classNames.header ?? ''} ${classNames.pinnedHeader ?? ''}`}
                           style={{
                             display: 'flex',
-                            height: 36,
+                            height: leafHeight,
                             alignItems: 'center',
                             justifyContent: 'center',
                             overflow: 'hidden',
@@ -1708,6 +1882,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                             top: 0,
                             zIndex: 13,
                             width: '48px',
+                            gridRow: leafGridRow,
                             ...styles.header,
                             ...styles.pinnedHeader,
                           }}
@@ -1748,7 +1923,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                                     });
                                   }
                                 }}
-                                style={{ cursor: 'pointer', accentColor }}
+                                style={{ cursor: 'pointer', accentColor, colorScheme: 'light dark' }}
                               />
                             )}
                         </div>
@@ -1764,7 +1939,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                           className={`${classNames.header ?? ''} ${classNames.pinnedHeader ?? ''}`}
                           style={{
                             display: 'flex',
-                            height: 36,
+                            height: leafHeight,
                             alignItems: 'center',
                             justifyContent: 'center',
                             overflow: 'hidden',
@@ -1776,6 +1951,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                             top: 0,
                             zIndex: 13,
                             width: '40px',
+                            gridRow: leafGridRow,
                             ...styles.header,
                             ...styles.pinnedHeader,
                           }}
@@ -1815,6 +1991,9 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                             : columnContextMenuItems
                         }
                         disabledFilters={disabledFilters}
+                        headerGridRow={leafGridRow}
+                        headerHeight={leafHeight}
+                        stickyTop={leafStickyTop}
                       />
                     );
                   })}
@@ -1900,6 +2079,10 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                     headerHeight={HEADER_HEIGHT}
                     rowClassName={rowClassName as ((record: DataRecord, index: number) => string) | undefined}
                     rowStyle={rowStyle as ((record: DataRecord, index: number) => React.CSSProperties) | undefined}
+                    bodyGridRow={hasColumnGroups ? 3 : 2}
+                    onEdit={onEdit as ((value: unknown, record: DataRecord, dataIndex: string, rowIndex: number) => void) | undefined}
+                    editingCell={editingCell}
+                    onEditComplete={handleEditComplete}
                   />
                 )}
               </div>
@@ -1910,6 +2093,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
 
         {pgEnabled && (
           <div
+            className={classNames.pagination ?? ''}
             style={{
               display: 'flex',
               height: 36,
@@ -1922,6 +2106,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
               backdropFilter: 'blur(8px)',
               backgroundColor: 'rgba(128,128,128,0.06)',
               gap: 12,
+              ...styles.pagination,
             }}
           >
             <div style={{ display: 'flex', flex: '1 1 0%', alignItems: 'center' }}>
@@ -1930,13 +2115,19 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                   total > 0 ? (currentPage - 1) * pageSize + 1 : 0;
                 const rangeEnd = Math.min(currentPage * pageSize, total);
                 return (typeof pagination === 'object' && pagination?.showTotal) ? (
-                  <span style={{ color: 'GrayText', fontSize: 12 }}>
+                  <span
+                    className={classNames.paginationInfo ?? ''}
+                    style={{ color: 'GrayText', fontSize: 12, ...styles.paginationInfo }}
+                  >
                     Showing{' '}
                     {pagination.showTotal(total, [rangeStart, rangeEnd])} of{' '}
                     {total} items
                   </span>
                 ) : (
-                  <span style={{ color: 'GrayText', fontSize: 12 }}>
+                  <span
+                    className={classNames.paginationInfo ?? ''}
+                    style={{ color: 'GrayText', fontSize: 12, ...styles.paginationInfo }}
+                  >
                     {rangeStart}–{rangeEnd} of {total}
                   </span>
                 );
@@ -1955,6 +2146,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
               <button
                 onClick={() => handlePageChange(1)}
                 disabled={currentPage === 1}
+                className={classNames.paginationButton ?? ''}
                 style={{
                   display: 'inline-flex',
                   height: 24,
@@ -1968,6 +2160,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                   border: 'none',
                   padding: 0,
                   color: 'inherit',
+                  ...styles.paginationButton,
                 }}
                 title="First page"
               >
@@ -1976,6 +2169,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
               <button
                 onClick={() => handlePageChange(currentPage - 1)}
                 disabled={currentPage === 1}
+                className={classNames.paginationButton ?? ''}
                 style={{
                   display: 'inline-flex',
                   height: 24,
@@ -1989,6 +2183,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                   border: 'none',
                   padding: 0,
                   color: 'inherit',
+                  ...styles.paginationButton,
                 }}
                 title="Previous page"
               >
@@ -2012,9 +2207,11 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                     </span>
                   );
                 }
+                const isActivePage = page === currentPage;
                 return (
                   <button
                     key={page}
+                    className={`${classNames.paginationButton ?? ''} ${isActivePage ? (classNames.paginationActiveButton ?? '') : ''}`.trim() || undefined}
                     style={{
                       display: 'inline-flex',
                       height: 24,
@@ -2026,9 +2223,11 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                       paddingLeft: 6,
                       paddingRight: 6,
                       fontSize: 12,
-                      color: page === currentPage ? accentColor : undefined,
+                      color: isActivePage ? accentColor : undefined,
                       background: 'none',
                       border: 'none',
+                      ...styles.paginationButton,
+                      ...(isActivePage ? styles.paginationActiveButton : undefined),
                     }}
                     onClick={() => handlePageChange(page as number)}
                   >
@@ -2040,6 +2239,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
               <button
                 onClick={() => handlePageChange(currentPage + 1)}
                 disabled={currentPage === totalPages}
+                className={classNames.paginationButton ?? ''}
                 style={{
                   display: 'inline-flex',
                   height: 24,
@@ -2053,6 +2253,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                   border: 'none',
                   padding: 0,
                   color: 'inherit',
+                  ...styles.paginationButton,
                 }}
                 title="Next page"
               >
@@ -2061,6 +2262,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
               <button
                 onClick={() => handlePageChange(totalPages)}
                 disabled={currentPage === totalPages}
+                className={classNames.paginationButton ?? ''}
                 style={{
                   display: 'inline-flex',
                   height: 24,
@@ -2074,6 +2276,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                   border: 'none',
                   padding: 0,
                   color: 'inherit',
+                  ...styles.paginationButton,
                 }}
                 title="Last page"
               >
@@ -2094,6 +2297,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                 <select
                   value={pageSize}
                   onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+                  className={classNames.paginationSelect ?? ''}
                   style={{
                     cursor: 'pointer',
                     borderRadius: 4,
@@ -2106,6 +2310,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                     height: 24,
                     background: 'inherit',
                     color: 'inherit',
+                    ...styles.paginationSelect,
                   }}
                 >
                   {(typeof pagination === 'object' && pagination?.pageSizeOptions
@@ -2201,6 +2406,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
           );
           const hasCopy = !!menuCol?.copy;
           const hasRowPin = !!rowPinning;
+          const hasEdit = !!menuCol?.editable && !menuCol?.render && !!onEdit;
 
           let menuRecord: T | undefined;
           let menuRowIndex = 0;
@@ -2219,7 +2425,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
             }
           }
 
-          const menuValue = menuRecord && menuCol
+          const menuValue = menuRecord && menuCol?.dataIndex != null
             ? menuRecord[menuCol.dataIndex]
             : undefined;
 
@@ -2316,7 +2522,37 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                 </>
               )}
 
-              {hasRowPin && hasCopy && (
+              {hasRowPin && (hasCopy || hasEdit) && (
+                <div
+                  style={{
+                    borderTop: '1px solid rgba(128,128,128,0.2)',
+                    margin: '4px 0',
+                  }}
+                />
+              )}
+
+              {hasEdit && (
+                <button
+                  data-bt-ctx-item
+                  style={btnStyle}
+                  onClick={() => {
+                    setEditingCell({
+                      rowKey: cellContextMenu.rowKey,
+                      columnKey: cellContextMenu.columnKey,
+                    });
+                    setCellContextMenu(null);
+                  }}
+                >
+                  {icons?.edit ?? (
+                    <PencilIcon
+                      style={{ width: 14, height: 14, flexShrink: 0 }}
+                    />
+                  )}
+                  Edit
+                </button>
+              )}
+
+              {(hasEdit || hasRowPin) && hasCopy && (
                 <div
                   style={{
                     borderTop: '1px solid rgba(128,128,128,0.2)',
@@ -2356,7 +2592,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
 
               {menuCol?.columnCellContextMenuItems && menuCol.columnCellContextMenuItems.length > 0 && (
                 <>
-                  {(hasCopy || hasRowPin) && (
+                  {(hasCopy || hasRowPin || hasEdit) && (
                     <div
                       style={{
                         borderTop: '1px solid rgba(128,128,128,0.2)',

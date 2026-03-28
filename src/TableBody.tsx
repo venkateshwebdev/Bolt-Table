@@ -1,7 +1,7 @@
 'use client';
 
 import type { VirtualItem, Virtualizer } from '@tanstack/react-virtual';
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ClassNamesTypes, StylesTypes } from './BoltTable';
 import type {
@@ -89,6 +89,18 @@ interface TableBodyProps {
 
   /** Returns inline CSS styles for a given row based on its record and index */
   rowStyle?: (record: DataRecord, index: number) => React.CSSProperties;
+
+  /** CSS grid row index for the body area. Defaults to 2. Set to 3 when column groups add an extra header row. */
+  bodyGridRow?: number;
+
+  /** Called when a user finishes editing an editable cell. */
+  onEdit?: (value: unknown, record: DataRecord, dataIndex: string, rowIndex: number) => void;
+
+  /** Identifies the cell currently in edit mode (set from the context menu). */
+  editingCell?: { rowKey: string; columnKey: string } | null;
+
+  /** Called when the editing input commits or cancels — clears `editingCell`. */
+  onEditComplete?: () => void;
 }
 
 const SHIMMER_WIDTHS = [55, 70, 45, 80, 60, 50, 75, 65];
@@ -111,7 +123,79 @@ interface CellProps {
   accentColor?: string;
   isLoading?: boolean;
   recordFingerprint?: string;
+  onEdit?: (value: unknown, record: DataRecord, dataIndex: string, rowIndex: number) => void;
+  isEditing?: boolean;
+  onEditComplete?: () => void;
 }
+
+const EditableCell = ({
+  value,
+  record,
+  column,
+  rowIndex,
+  onEdit,
+  onEditComplete,
+}: {
+  value: unknown;
+  record: DataRecord;
+  column: ColumnType<DataRecord>;
+  rowIndex: number;
+  onEdit: (value: unknown, record: DataRecord, dataIndex: string, rowIndex: number) => void;
+  onEditComplete: () => void;
+}) => {
+  const [draft, setDraft] = useState(String(value ?? ''));
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setDraft(String(value ?? ''));
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    });
+  }, [value]);
+
+  const commit = useCallback(() => {
+    const raw = String(value ?? '');
+    if (draft !== raw && column.dataIndex) {
+      const coerced: unknown =
+        typeof value === 'number' && !Number.isNaN(Number(draft))
+          ? Number(draft)
+          : draft;
+      onEdit(coerced, record, column.dataIndex, rowIndex);
+    }
+    onEditComplete();
+  }, [draft, value, column.dataIndex, record, rowIndex, onEdit, onEditComplete]);
+
+  const cancel = useCallback(() => {
+    onEditComplete();
+  }, [onEditComplete]);
+
+  return (
+    <input
+      ref={inputRef}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') commit();
+        if (e.key === 'Escape') cancel();
+      }}
+      style={{
+        width: '100%',
+        height: '100%',
+        border: 'none',
+        outline: 'none',
+        background: 'transparent',
+        font: 'inherit',
+        color: 'inherit',
+        padding: 0,
+        margin: 0,
+        boxSizing: 'border-box',
+      }}
+    />
+  );
+};
+EditableCell.displayName = 'EditableCell';
 
 const Cell = React.memo(
   ({
@@ -129,6 +213,9 @@ const Cell = React.memo(
     getRawRowKey,
     accentColor,
     isLoading,
+    onEdit,
+    isEditing,
+    onEditComplete,
   }: CellProps) => {
     const isPinned = Boolean(column.pinned);
     if (
@@ -217,7 +304,7 @@ const Cell = React.memo(
                 type: 'multiple',
               });
             }}
-            style={{ cursor: 'pointer', accentColor }}
+            style={{ cursor: "pointer", accentColor, colorScheme: "light dark" }}
           />
         );
 
@@ -247,8 +334,22 @@ const Cell = React.memo(
       );
     }
 
+    const isEditable = !!column.editable && !column.render && !!onEdit;
+    const showEditor = isEditable && isEditing && onEditComplete;
+
     let content: React.ReactNode;
-    if (column.render) {
+    if (showEditor) {
+      content = (
+        <EditableCell
+          value={value}
+          record={record}
+          column={column}
+          rowIndex={rowIndex}
+          onEdit={onEdit!}
+          onEditComplete={onEditComplete!}
+        />
+      );
+    } else if (column.render) {
       try {
         content = column.render(value, record, rowIndex);
       } catch {
@@ -279,7 +380,7 @@ const Cell = React.memo(
           ...styles?.cell,
         }}
       >
-        {isSystem ? content : (
+        {isSystem ? content : showEditor ? content : (
           <div
             style={{
               overflow: 'hidden',
@@ -300,6 +401,10 @@ const Cell = React.memo(
     if (prev.column.pinned !== next.column.pinned) return false;
     if (prev.classNames !== next.classNames) return false;
     if (prev.styles !== next.styles) return false;
+    if (prev.column.editable !== next.column.editable) return false;
+    if (prev.onEdit !== next.onEdit) return false;
+    if (prev.isEditing !== next.isEditing) return false;
+    if (prev.onEditComplete !== next.onEditComplete) return false;
     if (prev.column.key === '__select__') {
       return (
         prev.isSelected === next.isSelected &&
@@ -385,6 +490,10 @@ const TableBody: React.FC<TableBodyProps> = ({
   headerHeight = 36,
   rowClassName,
   rowStyle,
+  bodyGridRow = 2,
+  onEdit,
+  editingCell,
+  onEditComplete,
 }) => {
   const virtualItems = rowVirtualizer.getVirtualItems();
   const totalSize = rowVirtualizer.getTotalSize();
@@ -413,7 +522,7 @@ const TableBody: React.FC<TableBodyProps> = ({
 
       const style: React.CSSProperties = {
         gridColumn: colIndex + 1,
-        gridRow: 2,
+        gridRow: bodyGridRow,
         height: `${totalSize}px`,
         position: isPinned ? 'sticky' : 'relative',
         zIndex,
@@ -430,7 +539,7 @@ const TableBody: React.FC<TableBodyProps> = ({
 
       return { key: col.key, style, isPinned };
     });
-  }, [safeColumns, columnOffsets, totalSize, styles]);
+  }, [safeColumns, columnOffsets, totalSize, styles, bodyGridRow]);
 
   if (safeData.length === 0 || safeColumns.length === 0) return null;
 
@@ -455,7 +564,7 @@ const TableBody: React.FC<TableBodyProps> = ({
                 : String(virtualRow.index);
               const isSelected = selectedKeySet.has(rowKey);
               const isExpanded = resolvedExpandedKeys?.has(rowKey) ?? false;
-              const cellValue = row[col.dataIndex];
+              const cellValue = col.dataIndex != null ? row[col.dataIndex] : undefined;
               const isRowShimmer = isLoading || rowKey.startsWith('__shimmer_');
               let recordFingerprint: string | undefined;
               if (hasRender && !isRowShimmer) {
@@ -508,6 +617,9 @@ const TableBody: React.FC<TableBodyProps> = ({
                       accentColor={accentColor}
                       isLoading={isRowShimmer}
                       recordFingerprint={recordFingerprint}
+                      onEdit={onEdit}
+                      isEditing={editingCell?.rowKey === rowKey && editingCell?.columnKey === col.key}
+                      onEditComplete={onEditComplete}
                     />
                   </div>
                 </div>
@@ -521,7 +633,7 @@ const TableBody: React.FC<TableBodyProps> = ({
         <div
           style={{
             gridColumn: '1 / -1',
-            gridRow: 2,
+            gridRow: bodyGridRow,
             height: `${totalSize}px`,
             position: 'relative',
             zIndex: 15,
@@ -598,7 +710,7 @@ const TableBody: React.FC<TableBodyProps> = ({
         <div
           style={{
             gridColumn: '1 / -1',
-            gridRow: 2,
+            gridRow: bodyGridRow,
             height: `${totalSize}px`,
             position: 'relative',
             zIndex: 20,
@@ -641,7 +753,7 @@ const TableBody: React.FC<TableBodyProps> = ({
                   }}
                 >
                   {safeColumns.map((col) => {
-                    const cellValue = row[col.dataIndex];
+                    const cellValue = col.dataIndex != null ? row[col.dataIndex] : undefined;
                     const stickyOffset = columnOffsets.get(col.key);
                     const isPinned = Boolean(col.pinned);
                     let zIndex = 0;
@@ -707,6 +819,9 @@ const TableBody: React.FC<TableBodyProps> = ({
                             accentColor={accentColor}
                             isLoading={false}
                             recordFingerprint={recordFingerprint}
+                            onEdit={onEdit}
+                            isEditing={editingCell?.rowKey === rk && editingCell?.columnKey === col.key}
+                            onEditComplete={onEditComplete}
                           />
                         </div>
                       </div>
@@ -723,7 +838,7 @@ const TableBody: React.FC<TableBodyProps> = ({
         <div
           style={{
             gridColumn: '1 / -1',
-            gridRow: 2,
+            gridRow: bodyGridRow,
             height: `${totalSize}px`,
             position: 'relative',
             zIndex: 20,
@@ -769,7 +884,7 @@ const TableBody: React.FC<TableBodyProps> = ({
                   }}
                 >
                   {safeColumns.map((col) => {
-                    const cellValue = row[col.dataIndex];
+                    const cellValue = col.dataIndex != null ? row[col.dataIndex] : undefined;
                     const stickyOffset = columnOffsets.get(col.key);
                     const isPinned = Boolean(col.pinned);
                     let zIndex = 0;
@@ -835,6 +950,9 @@ const TableBody: React.FC<TableBodyProps> = ({
                             accentColor={accentColor}
                             isLoading={false}
                             recordFingerprint={recordFingerprint}
+                            onEdit={onEdit}
+                            isEditing={editingCell?.rowKey === rk && editingCell?.columnKey === col.key}
+                            onEditComplete={onEditComplete}
                           />
                         </div>
                       </div>

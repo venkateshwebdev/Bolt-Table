@@ -65,6 +65,12 @@ interface DraggableHeaderProps {
   icons?: BoltTableIcons;
   /** When true, hides the filter option from the context menu. */
   disabledFilters?: boolean;
+  /** CSS grid row placement for this header cell. Defaults to 1. */
+  headerGridRow?: number | string;
+  /** Height of this header cell in pixels. Defaults to 36. */
+  headerHeight?: number;
+  /** Sticky top offset in pixels. Defaults to 0. */
+  stickyTop?: number;
 }
 
 function isColumnSortable(col: ColumnType<DataRecord>): boolean {
@@ -98,6 +104,9 @@ const DraggableHeader = React.memo(
     icons,
     onColumnDragStart,
     disabledFilters,
+    headerGridRow = 1,
+    headerHeight = 36,
+    stickyTop = 0,
   }: DraggableHeaderProps) => {
     const effectivelySortable = isColumnSortable(column);
     const effectivelyFilterable = !disabledFilters && isColumnFilterable(column);
@@ -186,29 +195,29 @@ const DraggableHeader = React.memo(
     const isPinned = Boolean(column.pinned);
     const zIndex = isPinned ? 12 : 10;
 
-    const headerStyle: CSSProperties = {
-      position: 'sticky',
-      top: 0,
+    const headerStyle: any = {
+      position: "sticky",
+      top: stickyTop,
       zIndex,
-      width: isLastColumn ? '100%' : widthPx,
+      width: isLastColumn ? "100%" : widthPx,
       minWidth: widthPx,
       ...(isLastColumn ? {} : { maxWidth: widthPx }),
       gridColumn: visualIndex + 1,
-      gridRow: 1,
-      display: 'flex',
-      height: 36,
-      alignItems: 'center',
-      overflow: 'hidden',
-      textOverflow: 'ellipsis',
-      whiteSpace: 'nowrap' as const,
-      borderTop: 'none',
-      borderRight: 'none',
-      borderBottom: '1px solid rgba(128,128,128,0.2)',
-      borderLeft: 'none',
-      ...(column.pinned === 'left' && stickyOffset !== undefined
+      gridRow: headerGridRow,
+      display: "flex",
+      height: headerHeight,
+      alignItems: "center",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap" as const,
+      borderTop: "none",
+      borderRight: "0.5px solid rgba(128,128,128,0.2)",
+      borderBottom: "1px solid rgba(128,128,128,0.2)",
+      borderLeft: "0.5px solid rgba(128,128,128,0.2)",
+      ...(column.pinned === "left" && stickyOffset !== undefined
         ? { left: `${stickyOffset}px` }
         : {}),
-      ...(column.pinned === 'right' && stickyOffset !== undefined
+      ...(column.pinned === "right" && stickyOffset !== undefined
         ? { right: `${stickyOffset}px` }
         : {}),
       ...column.style,
@@ -639,7 +648,10 @@ const DraggableHeader = React.memo(
       prevProps.classNames === nextProps.classNames &&
       prevProps.styles === nextProps.styles &&
       prevProps.customContextMenuItems === nextProps.customContextMenuItems &&
-      prevProps.disabledFilters === nextProps.disabledFilters
+      prevProps.disabledFilters === nextProps.disabledFilters &&
+      prevProps.headerGridRow === nextProps.headerGridRow &&
+      prevProps.headerHeight === nextProps.headerHeight &&
+      prevProps.stickyTop === nextProps.stickyTop
     );
   },
 );
