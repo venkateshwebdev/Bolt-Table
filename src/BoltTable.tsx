@@ -471,7 +471,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
         }
 
         return (
-          <button
+          <button type="button"
             onClick={(e) => {
               e.stopPropagation();
               toggleExpandRef.current(key);
@@ -1993,7 +1993,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                 gap: 4,
               }}
             >
-              <button
+              <button type="button"
                 onClick={() => handlePageChange(1)}
                 disabled={currentPage === 1}
                 style={{
@@ -2014,7 +2014,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
               >
                 {icons?.chevronsLeft ?? <ChevronsLeftIcon style={{ width: 12, height: 12 }} />}
               </button>
-              <button
+              <button type="button"
                 onClick={() => handlePageChange(currentPage - 1)}
                 disabled={currentPage === 1}
                 style={{
@@ -2054,7 +2054,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                   );
                 }
                 return (
-                  <button
+                  <button type="button"
                     key={page}
                     style={{
                       display: 'inline-flex',
@@ -2078,7 +2078,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                 );
               })}
 
-              <button
+              <button type="button"
                 onClick={() => handlePageChange(currentPage + 1)}
                 disabled={currentPage === totalPages}
                 style={{
@@ -2099,7 +2099,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
               >
                 {icons?.chevronRight ?? <ChevronRightIcon style={{ width: 12, height: 12 }} />}
               </button>
-              <button
+              <button type="button"
                 onClick={() => handlePageChange(totalPages)}
                 disabled={currentPage === totalPages}
                 style={{
@@ -2300,7 +2300,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
             >
               {hasRowPin && (
                 <>
-                  <button
+                  <button type="button"
                     data-bt-ctx-item
                     style={btnStyle}
                     onClick={() => {
@@ -2325,7 +2325,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                     {isPinnedTop ? 'Unpin Row from Top' : 'Pin Row to Top'}
                   </button>
 
-                  <button
+                  <button type="button"
                     data-bt-ctx-item
                     style={btnStyle}
                     onClick={() => {
@@ -2367,7 +2367,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
               )}
 
               {hasCopy && menuRecord && menuCol && (
-                <button
+                <button type="button"
                   data-bt-ctx-item
                   style={btnStyle}
                   onClick={() => {
@@ -2406,7 +2406,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                     />
                   )}
                   {(menuCol.columnCellContextMenuItems as { key: string; label: React.ReactNode; icon?: React.ReactNode; danger?: boolean; disabled?: boolean; onClick: (columnKey: string, record: T, rowIndex: number) => void }[]).map((item) => (
-                    <button
+                    <button type="button"
                       key={item.key}
                       data-bt-ctx-item=""
                       disabled={item.disabled}
