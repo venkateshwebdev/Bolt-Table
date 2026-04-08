@@ -65,6 +65,8 @@ interface DraggableHeaderProps {
   icons?: BoltTableIcons;
   /** When true, hides the filter option from the context menu. */
   disabledFilters?: boolean;
+  /** When true, removes the left border (for the first visible column). */
+  isFirstColumn?: boolean;
 }
 
 function isColumnSortable(col: ColumnType<DataRecord>): boolean {
@@ -98,6 +100,7 @@ const DraggableHeader = React.memo(
     icons,
     onColumnDragStart,
     disabledFilters,
+    isFirstColumn = false,
   }: DraggableHeaderProps) => {
     const effectivelySortable = isColumnSortable(column);
     const effectivelyFilterable = !disabledFilters && isColumnFilterable(column);
@@ -257,7 +260,7 @@ const DraggableHeader = React.memo(
               whiteSpace: 'nowrap' as const,
               paddingLeft: 8,
               paddingRight: 8,
-              borderLeft: '1px solid rgba(128,128,128,0.2)',
+              borderLeft: isFirstColumn ? 'none' : '1px solid rgba(128,128,128,0.2)',
               fontWeight: 500,
               cursor: isPinned ? 'default' : 'grab',
             }}
@@ -639,7 +642,8 @@ const DraggableHeader = React.memo(
       prevProps.classNames === nextProps.classNames &&
       prevProps.styles === nextProps.styles &&
       prevProps.customContextMenuItems === nextProps.customContextMenuItems &&
-      prevProps.disabledFilters === nextProps.disabledFilters
+      prevProps.disabledFilters === nextProps.disabledFilters &&
+      prevProps.isFirstColumn === nextProps.isFirstColumn
     );
   },
 );

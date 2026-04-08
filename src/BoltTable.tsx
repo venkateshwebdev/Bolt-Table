@@ -161,6 +161,9 @@ interface BoltTableProps<T extends DataRecord = DataRecord> {
 
   /** When true, pinned rows remain visible even after navigating to a different page. */
   readonly keepPinnedRowsAcrossPages?: boolean;
+
+  /** Called when a row is clicked. When provided, all row cells show a pointer cursor on hover. */
+  readonly onRowClick?: (record: T, index: number, event: React.MouseEvent) => void;
 }
 
 export interface ClassNamesTypes {
@@ -274,6 +277,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   disabledFilters,
   onCopy,
   keepPinnedRowsAcrossPages,
+  onRowClick,
 }: BoltTableProps<T>) {
   const data = useMemo<T[]>(() => {
     if (!Array.isArray(rawData)) return STABLE_EMPTY_DATA as T[];
@@ -1470,6 +1474,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
           [data-bt-header][data-drag-over] {
             border: 1px dashed ${accentColor} !important;
           }
+          ${onRowClick ? '[data-bt-cell] { cursor: pointer; }' : ''}
         `}</style>
 
         <div
@@ -1685,8 +1690,42 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                 }}
                 onTouchEnd={cancelCellLongPress}
                 onTouchCancel={cancelCellLongPress}
+                onClick={onRowClick ? (e: React.MouseEvent) => {
+                  const target = e.target as HTMLElement;
+                  if (target.closest('input, button, a, select, textarea')) return;
+                  const cell = target.closest<HTMLElement>('[data-bt-cell]');
+                  if (!cell) return;
+                  const rk = cell.dataset.rowKey;
+                  if (!rk) return;
+                  for (let i = 0; i < (displayData as T[]).length; i++) {
+                    const row = displayData[i] as T;
+                    if (row == null) continue;
+                    if (getRowKey(row, i) === rk) {
+                      onRowClick(row, i, e);
+                      return;
+                    }
+                  }
+                  for (let i = 0; i < pinnedTopRows.length; i++) {
+                    if (pinnedTopRows[i] == null) continue;
+                    if (getRowKey(pinnedTopRows[i], i) === rk) {
+                      onRowClick(pinnedTopRows[i], i, e);
+                      return;
+                    }
+                  }
+                  for (let i = 0; i < pinnedBottomRows.length; i++) {
+                    if (pinnedBottomRows[i] == null) continue;
+                    if (getRowKey(pinnedBottomRows[i], i) === rk) {
+                      onRowClick(pinnedBottomRows[i], i, e);
+                      return;
+                    }
+                  }
+                } : undefined}
               >
-                  {orderedColumns.map((column, visualIndex) => {
+                  {(() => {
+                    const firstDataColIndex = orderedColumns.findIndex(
+                      (c) => c.key !== '__select__' && c.key !== '__expand__',
+                    );
+                    return orderedColumns.map((column, visualIndex) => {
                     if (column.key === '__select__' && rowSelection) {
                       return (
                         <div
@@ -1800,6 +1839,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                         onTogglePin={handleTogglePin}
                         onToggleHide={handleToggleHide}
                         isLastColumn={visualIndex === orderedColumns.length - 1}
+                        isFirstColumn={visualIndex === firstDataColIndex}
                         sortDirection={
                           sortState.key === column.key
                             ? sortState.direction
@@ -1817,7 +1857,8 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                         disabledFilters={disabledFilters}
                       />
                     );
-                  })}
+                  });
+                  })()}
 
                 {isEmpty ? (
                   <div
