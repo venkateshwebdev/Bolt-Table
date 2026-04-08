@@ -186,6 +186,9 @@ interface BoltTableProps<T extends DataRecord = DataRecord> {
 
   /** Called when a user finishes editing an editable cell. Receives the new value, the row record, the column's `dataIndex`, and the row index. */
   readonly onEdit?: (value: unknown, record: T, dataIndex: string, rowIndex: number) => void;
+
+  /** Called when a row is clicked. When provided, all row cells show a pointer cursor on hover. */
+  readonly onRowClick?: (record: T, index: number, event: React.MouseEvent) => void;
 }
 
 export interface ClassNamesTypes {
@@ -330,6 +333,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   onCopy,
   keepPinnedRowsAcrossPages,
   onEdit,
+  onRowClick,
 }: BoltTableProps<T>) {
   const data = useMemo<T[]>(() => {
     if (!Array.isArray(rawData)) return STABLE_EMPTY_DATA as T[];
@@ -560,7 +564,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
         }
 
         return (
-          <button
+          <button type="button"
             onClick={(e) => {
               e.stopPropagation();
               toggleExpandRef.current(key);
@@ -1592,6 +1596,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
           [data-bt-header][data-drag-over] {
             border: 1px dashed ${accentColor} !important;
           }
+          ${onRowClick ? '[data-bt-cell] { cursor: pointer; }' : ''}
         `}</style>
 
         <div
@@ -1811,6 +1816,36 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                 }}
                 onTouchEnd={cancelCellLongPress}
                 onTouchCancel={cancelCellLongPress}
+                onClick={onRowClick ? (e: React.MouseEvent) => {
+                  const target = e.target as HTMLElement;
+                  if (target.closest('input, button, a, select, textarea')) return;
+                  const cell = target.closest<HTMLElement>('[data-bt-cell]');
+                  if (!cell) return;
+                  const rk = cell.dataset.rowKey;
+                  if (!rk) return;
+                  for (let i = 0; i < (displayData as T[]).length; i++) {
+                    const row = displayData[i] as T;
+                    if (row == null) continue;
+                    if (getRowKey(row, i) === rk) {
+                      onRowClick(row, i, e);
+                      return;
+                    }
+                  }
+                  for (let i = 0; i < pinnedTopRows.length; i++) {
+                    if (pinnedTopRows[i] == null) continue;
+                    if (getRowKey(pinnedTopRows[i], i) === rk) {
+                      onRowClick(pinnedTopRows[i], i, e);
+                      return;
+                    }
+                  }
+                  for (let i = 0; i < pinnedBottomRows.length; i++) {
+                    if (pinnedBottomRows[i] == null) continue;
+                    if (getRowKey(pinnedBottomRows[i], i) === rk) {
+                      onRowClick(pinnedBottomRows[i], i, e);
+                      return;
+                    }
+                  }
+                } : undefined}
               >
                 {hasColumnGroups && headerGroups.map((group) => {
                     let minIdx = Infinity;
@@ -1853,7 +1888,11 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                     );
                   })}
 
-                  {orderedColumns.map((column, visualIndex) => {
+                  {(() => {
+                    const firstDataColIndex = orderedColumns.findIndex(
+                      (c) => c.key !== '__select__' && c.key !== '__expand__',
+                    );
+                    return orderedColumns.map((column, visualIndex) => {
                     const isInGroup = groupedColumnKeySet?.has(column.key) ?? false;
                     const leafGridRow = hasColumnGroups
                       ? (isInGroup ? 2 : '1 / 3')
@@ -1976,6 +2015,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                         onTogglePin={handleTogglePin}
                         onToggleHide={handleToggleHide}
                         isLastColumn={visualIndex === orderedColumns.length - 1}
+                        isFirstColumn={visualIndex === firstDataColIndex}
                         sortDirection={
                           sortState.key === column.key
                             ? sortState.direction
@@ -1996,7 +2036,8 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                         stickyTop={leafStickyTop}
                       />
                     );
-                  })}
+                  });
+                  })()}
 
                 {isEmpty ? (
                   <div
@@ -2143,7 +2184,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                 gap: 4,
               }}
             >
-              <button
+              <button type="button"
                 onClick={() => handlePageChange(1)}
                 disabled={currentPage === 1}
                 className={classNames.paginationButton ?? ''}
@@ -2166,7 +2207,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
               >
                 {icons?.chevronsLeft ?? <ChevronsLeftIcon style={{ width: 12, height: 12 }} />}
               </button>
-              <button
+              <button type="button"
                 onClick={() => handlePageChange(currentPage - 1)}
                 disabled={currentPage === 1}
                 className={classNames.paginationButton ?? ''}
@@ -2209,7 +2250,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                 }
                 const isActivePage = page === currentPage;
                 return (
-                  <button
+                  <button type="button"
                     key={page}
                     className={`${classNames.paginationButton ?? ''} ${isActivePage ? (classNames.paginationActiveButton ?? '') : ''}`.trim() || undefined}
                     style={{
@@ -2236,7 +2277,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                 );
               })}
 
-              <button
+              <button type="button"
                 onClick={() => handlePageChange(currentPage + 1)}
                 disabled={currentPage === totalPages}
                 className={classNames.paginationButton ?? ''}
@@ -2259,7 +2300,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
               >
                 {icons?.chevronRight ?? <ChevronRightIcon style={{ width: 12, height: 12 }} />}
               </button>
-              <button
+              <button type="button"
                 onClick={() => handlePageChange(totalPages)}
                 disabled={currentPage === totalPages}
                 className={classNames.paginationButton ?? ''}
@@ -2465,7 +2506,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
             >
               {hasRowPin && (
                 <>
-                  <button
+                  <button type="button"
                     data-bt-ctx-item
                     style={btnStyle}
                     onClick={() => {
@@ -2490,7 +2531,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                     {isPinnedTop ? 'Unpin Row from Top' : 'Pin Row to Top'}
                   </button>
 
-                  <button
+                  <button type="button"
                     data-bt-ctx-item
                     style={btnStyle}
                     onClick={() => {
@@ -2532,7 +2573,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
               )}
 
               {hasEdit && (
-                <button
+                <button type="button"
                   data-bt-ctx-item
                   style={btnStyle}
                   onClick={() => {
@@ -2562,7 +2603,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
               )}
 
               {hasCopy && menuRecord && menuCol && (
-                <button
+                <button type="button"
                   data-bt-ctx-item
                   style={btnStyle}
                   onClick={() => {
@@ -2601,7 +2642,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                     />
                   )}
                   {(menuCol.columnCellContextMenuItems as { key: string; label: React.ReactNode; icon?: React.ReactNode; danger?: boolean; disabled?: boolean; onClick: (columnKey: string, record: T, rowIndex: number) => void }[]).map((item) => (
-                    <button
+                    <button type="button"
                       key={item.key}
                       data-bt-ctx-item=""
                       disabled={item.disabled}

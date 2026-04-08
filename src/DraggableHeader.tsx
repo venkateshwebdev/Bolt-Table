@@ -71,6 +71,8 @@ interface DraggableHeaderProps {
   headerHeight?: number;
   /** Sticky top offset in pixels. Defaults to 0. */
   stickyTop?: number;
+  /** When true, removes the left border (for the first visible column). */
+  isFirstColumn?: boolean;
 }
 
 function isColumnSortable(col: ColumnType<DataRecord>): boolean {
@@ -107,6 +109,7 @@ const DraggableHeader = React.memo(
     headerGridRow = 1,
     headerHeight = 36,
     stickyTop = 0,
+    isFirstColumn = false,
   }: DraggableHeaderProps) => {
     const effectivelySortable = isColumnSortable(column);
     const effectivelyFilterable = !disabledFilters && isColumnFilterable(column);
@@ -213,7 +216,7 @@ const DraggableHeader = React.memo(
       borderTop: "none",
       borderRight: "0.5px solid rgba(128,128,128,0.2)",
       borderBottom: "1px solid rgba(128,128,128,0.2)",
-      borderLeft: "0.5px solid rgba(128,128,128,0.2)",
+      borderLeft: isFirstColumn ? "none" : "0.5px solid rgba(128,128,128,0.2)",
       ...(column.pinned === "left" && stickyOffset !== undefined
         ? { left: `${stickyOffset}px` }
         : {}),
@@ -266,7 +269,7 @@ const DraggableHeader = React.memo(
               whiteSpace: 'nowrap' as const,
               paddingLeft: 8,
               paddingRight: 8,
-              borderLeft: '1px solid rgba(128,128,128,0.2)',
+              borderLeft: isFirstColumn ? 'none' : '1px solid rgba(128,128,128,0.2)',
               fontWeight: 500,
               cursor: isPinned ? 'default' : 'grab',
             }}
@@ -320,7 +323,7 @@ const DraggableHeader = React.memo(
           </div>
 
           {isPinned && (
-            <button
+            <button type="button"
               style={{
                 position: 'relative',
                 height: '100%',
@@ -348,7 +351,7 @@ const DraggableHeader = React.memo(
           )}
 
           {!isPinned && (
-            <button
+            <button type="button"
               data-bt-resize=""
               style={{
                 position: 'relative',
@@ -424,7 +427,7 @@ const DraggableHeader = React.memo(
                   <>
               {effectivelySortable && onSort && (
                 <>
-                  <button
+                  <button type="button"
                     data-bt-ctx-item=""
                     style={{
                       ...ctxItemBase,
@@ -439,7 +442,7 @@ const DraggableHeader = React.memo(
                     {icons?.sortAsc ?? <ArrowUpAZIcon style={{ width: 12, height: 12 }} />}
                     Sort Ascending
                   </button>
-                  <button
+                  <button type="button"
                     data-bt-ctx-item=""
                     style={{
                       ...ctxItemBase,
@@ -497,7 +500,7 @@ const DraggableHeader = React.memo(
                       />
                     </div>
                   ) : (
-                    <button
+                    <button type="button"
                       data-bt-ctx-item=""
                       style={ctxItemBase}
                       onClick={() => {
@@ -511,7 +514,7 @@ const DraggableHeader = React.memo(
                     </button>
                   )}
                   {filterValue && (
-                    <button
+                    <button type="button"
                       data-bt-ctx-item=""
                       style={{
                         ...ctxItemBase,
@@ -531,7 +534,7 @@ const DraggableHeader = React.memo(
                 </>
               )}
 
-              <button
+              <button type="button"
                 data-bt-ctx-item=""
                 style={ctxItemBase}
                 onClick={() => {
@@ -548,7 +551,7 @@ const DraggableHeader = React.memo(
                 {column.pinned === 'left' ? 'Unpin Left' : 'Pin Left'}
               </button>
 
-              <button
+              <button type="button"
                 data-bt-ctx-item=""
                 style={ctxItemBase}
                 onClick={() => {
@@ -568,7 +571,7 @@ const DraggableHeader = React.memo(
               {!isPinned && (
                 <>
                   <div style={{ marginTop: 4, marginBottom: 4, borderTop: '1px solid rgba(128,128,128,0.2)' }} />
-                  <button
+                  <button type="button"
                     data-bt-ctx-item=""
                     style={ctxItemBase}
                     onClick={() => {
@@ -586,7 +589,7 @@ const DraggableHeader = React.memo(
                 <>
                   <div style={{ marginTop: 4, marginBottom: 4, borderTop: '1px solid rgba(128,128,128,0.2)' }} />
                   {customContextMenuItems.map((item) => (
-                    <button
+                    <button type="button"
                       key={item.key}
                       data-bt-ctx-item=""
                       disabled={item.disabled}
@@ -651,7 +654,8 @@ const DraggableHeader = React.memo(
       prevProps.disabledFilters === nextProps.disabledFilters &&
       prevProps.headerGridRow === nextProps.headerGridRow &&
       prevProps.headerHeight === nextProps.headerHeight &&
-      prevProps.stickyTop === nextProps.stickyTop
+      prevProps.stickyTop === nextProps.stickyTop &&
+      prevProps.isFirstColumn === nextProps.isFirstColumn
     );
   },
 );
