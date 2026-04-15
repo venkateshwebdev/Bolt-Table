@@ -277,7 +277,7 @@ const Cell = React.memo(
               rowSelection.onSelect?.(record, true, [record], e.nativeEvent);
               rowSelection.onChange?.([rawKey], [record], { type: 'single' });
             }}
-            style={{ cursor: 'pointer', accentColor }}
+            style={{ cursor: 'pointer', accentColor,backgroundColor:'#94A3B8' }}
           />
         ) : (
           <input
@@ -304,7 +304,7 @@ const Cell = React.memo(
                 type: 'multiple',
               });
             }}
-            style={{ cursor: "pointer", accentColor, colorScheme: "light dark" }}
+            style={{ cursor: "pointer", accentColor,backgroundColor:'#94A3B8' }}
           />
         );
 

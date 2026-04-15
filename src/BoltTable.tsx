@@ -1962,7 +1962,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                                     });
                                   }
                                 }}
-                                style={{ cursor: 'pointer', accentColor, colorScheme: 'light dark' }}
+                                style={{ cursor: 'pointer', accentColor, backgroundColor:'#94A3B8' }}
                               />
                             )}
                         </div>
@@ -1990,6 +1990,7 @@ return Array.from({ length: totalPages }, (_: unknown, i: number) => i + 1)
                             top: 0,
                             zIndex: 13,
                             width: '40px',
+                            backgroundColor:styles.pinnedBg,
                             gridRow: leafGridRow,
                             ...styles.header,
                             ...styles.pinnedHeader,
