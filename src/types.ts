@@ -1,7 +1,7 @@
-import { ReactNode } from 'react';
+import { ReactNode } from "react";
 
 /** `'asc'` | `'desc'` | `null` — the direction of a column sort. */
-export type SortDirection = 'asc' | 'desc' | null;
+export type SortDirection = "asc" | "desc" | null;
 
 /** Defines the shape of a single column in BoltTable. */
 export interface ColumnType<T = unknown> {
@@ -45,13 +45,13 @@ export interface ColumnType<T = unknown> {
   defaultHidden?: boolean;
 
   /** Which side this column is pinned to by default: `'left'`, `'right'`, or `false`. */
-  defaultPinned?: 'left' | 'right' | false;
+  defaultPinned?: "left" | "right" | false;
 
   /** Controlled hidden state of the column. For uncontrolled, use `defaultHidden`. */
   hidden?: boolean;
 
   /** Controlled pinned state: `'left'`, `'right'`, or `false`. For uncontrolled, use `defaultPinned`. */
-  pinned?: 'left' | 'right' | false;
+  pinned?: "left" | "right" | false;
 
   /** Additional CSS class name(s) applied to every cell in this column. */
   className?: string;
@@ -121,7 +121,7 @@ export interface ColumnContextMenuItem {
 }
 
 /** How the row selection was triggered: `'all'`, `'single'`, or `'multiple'`. */
-export type RowSelectMethod = 'all' | 'single' | 'multiple';
+export type RowSelectMethod = "all" | "single" | "multiple";
 
 /** Configuration for expandable rows with a custom rendered panel below each row. */
 export interface ExpandableConfig<T = unknown> {
@@ -155,7 +155,7 @@ export interface ExpandableConfig<T = unknown> {
 /** Configuration for row selection (checkboxes or radio buttons). */
 export interface RowSelectionConfig<T = unknown> {
   /** `'checkbox'` for multi-select (default) or `'radio'` for single-select. */
-  type?: 'checkbox' | 'radio';
+  type?: "checkbox" | "radio";
 
   /** When `true`, hides the "select all" checkbox in the header. */
   hideSelectAll?: boolean;
@@ -204,7 +204,6 @@ export interface PaginationType {
 
   /** Custom page-size options shown in the dropdown. Defaults to `[10, 15, 20, 25, 50, 100]`. */
   pageSizeOptions?: number[];
-
 }
 
 /** Configuration for row pinning. Pinned rows remain visible during vertical scroll. */
@@ -228,3 +227,21 @@ export interface RowExpansionConfig<T = unknown> {
 
 /** Base type for row records — all row objects must be indexable by string keys. */
 export type DataRecord = Record<string, unknown>;
+
+/** Configuration for persisting column state to localStorage. */
+export interface ColumnPersistenceConfig {
+  /** Unique key used as the localStorage key prefix. Required. */
+  storageKey: string;
+
+  /** Persist column order. Defaults to `true`. */
+  persistOrder?: boolean;
+
+  /** Persist column widths. Defaults to `true`. */
+  persistWidths?: boolean;
+
+  /** Persist column visibility (hidden state). Defaults to `true`. */
+  persistVisibility?: boolean;
+
+  /** Persist column pinned state. Defaults to `true`. */
+  persistPinned?: boolean;
+}

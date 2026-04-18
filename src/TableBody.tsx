@@ -1,15 +1,21 @@
-'use client';
+"use client";
 
-import type { VirtualItem, Virtualizer } from '@tanstack/react-virtual';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { VirtualItem, Virtualizer } from "@tanstack/react-virtual";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
-import { ClassNamesTypes, StylesTypes } from './BoltTable';
+import { ClassNamesTypes, StylesTypes } from "./BoltTable";
 import type {
   ColumnType,
   DataRecord,
   ExpandableConfig,
   RowSelectionConfig,
-} from './types';
+} from "./types";
 
 interface TableBodyProps {
   /** Current page's row data */
@@ -94,13 +100,24 @@ interface TableBodyProps {
   bodyGridRow?: number;
 
   /** Called when a user finishes editing an editable cell. */
-  onEdit?: (value: unknown, record: DataRecord, dataIndex: string, rowIndex: number) => void;
+  onEdit?: (
+    value: unknown,
+    record: DataRecord,
+    dataIndex: string,
+    rowIndex: number,
+  ) => void;
 
   /** Identifies the cell currently in edit mode (set from the context menu). */
   editingCell?: { rowKey: string; columnKey: string } | null;
 
   /** Called when the editing input commits or cancels — clears `editingCell`. */
   onEditComplete?: () => void;
+
+  /** When true, rows use content-based heights measured by ResizeObserver. */
+  enableDynamicRowHeight?: boolean;
+
+  /** Called when a row's measured height changes. Used by the parent to update the virtualizer. */
+  onRowHeightChange?: (index: number, height: number) => void;
 }
 
 const SHIMMER_WIDTHS = [55, 70, 45, 80, 60, 50, 75, 65];
@@ -123,7 +140,12 @@ interface CellProps {
   accentColor?: string;
   isLoading?: boolean;
   recordFingerprint?: string;
-  onEdit?: (value: unknown, record: DataRecord, dataIndex: string, rowIndex: number) => void;
+  onEdit?: (
+    value: unknown,
+    record: DataRecord,
+    dataIndex: string,
+    rowIndex: number,
+  ) => void;
   isEditing?: boolean;
   onEditComplete?: () => void;
 }
@@ -140,14 +162,19 @@ const EditableCell = ({
   record: DataRecord;
   column: ColumnType<DataRecord>;
   rowIndex: number;
-  onEdit: (value: unknown, record: DataRecord, dataIndex: string, rowIndex: number) => void;
+  onEdit: (
+    value: unknown,
+    record: DataRecord,
+    dataIndex: string,
+    rowIndex: number,
+  ) => void;
   onEditComplete: () => void;
 }) => {
-  const [draft, setDraft] = useState(String(value ?? ''));
+  const [draft, setDraft] = useState(String(value ?? ""));
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setDraft(String(value ?? ''));
+    setDraft(String(value ?? ""));
     requestAnimationFrame(() => {
       inputRef.current?.focus();
       inputRef.current?.select();
@@ -155,16 +182,24 @@ const EditableCell = ({
   }, [value]);
 
   const commit = useCallback(() => {
-    const raw = String(value ?? '');
+    const raw = String(value ?? "");
     if (draft !== raw && column.dataIndex) {
       const coerced: unknown =
-        typeof value === 'number' && !Number.isNaN(Number(draft))
+        typeof value === "number" && !Number.isNaN(Number(draft))
           ? Number(draft)
           : draft;
       onEdit(coerced, record, column.dataIndex, rowIndex);
     }
     onEditComplete();
-  }, [draft, value, column.dataIndex, record, rowIndex, onEdit, onEditComplete]);
+  }, [
+    draft,
+    value,
+    column.dataIndex,
+    record,
+    rowIndex,
+    onEdit,
+    onEditComplete,
+  ]);
 
   const cancel = useCallback(() => {
     onEditComplete();
@@ -177,25 +212,25 @@ const EditableCell = ({
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => {
-        if (e.key === 'Enter') commit();
-        if (e.key === 'Escape') cancel();
+        if (e.key === "Enter") commit();
+        if (e.key === "Escape") cancel();
       }}
       style={{
-        width: '100%',
-        height: '100%',
-        border: 'none',
-        outline: 'none',
-        background: 'transparent',
-        font: 'inherit',
-        color: 'inherit',
+        width: "100%",
+        height: "100%",
+        border: "none",
+        outline: "none",
+        background: "transparent",
+        font: "inherit",
+        color: "inherit",
         padding: 0,
         margin: 0,
-        boxSizing: 'border-box',
+        boxSizing: "border-box",
       }}
     />
   );
 };
-EditableCell.displayName = 'EditableCell';
+EditableCell.displayName = "EditableCell";
 
 const Cell = React.memo(
   ({
@@ -220,16 +255,16 @@ const Cell = React.memo(
     const isPinned = Boolean(column.pinned);
     if (
       isLoading &&
-      column.key !== '__select__' &&
-      column.key !== '__expand__'
+      column.key !== "__select__" &&
+      column.key !== "__expand__"
     ) {
       const shimmerContent = column.shimmerRender ? (
         column.shimmerRender()
       ) : (
         <div
           style={{
-            backgroundColor: 'rgba(100, 116, 139, 0.15)',
-            animation: 'bt-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            backgroundColor: "rgba(100, 116, 139, 0.15)",
+            animation: "bt-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
             borderRadius: 4,
             width: `${SHIMMER_WIDTHS[(rowIndex + column.key.length) % SHIMMER_WIDTHS.length]}%`,
             height: 14,
@@ -239,16 +274,16 @@ const Cell = React.memo(
 
       return (
         <div
-          className={`${column.className ?? ''} ${classNames?.cell ?? ''} ${isPinned ? (classNames?.pinnedCell ?? '') : ''}`}
+          className={`${column.className ?? ""} ${classNames?.cell ?? ""} ${isPinned ? (classNames?.pinnedCell ?? "") : ""}`}
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            overflow: 'hidden',
-            borderBottom: '1px solid rgba(128,128,128,0.2)',
+            display: "flex",
+            alignItems: "center",
+            overflow: "hidden",
+            borderBottom: "1px solid rgba(128,128,128,0.2)",
             paddingLeft: 8,
             paddingRight: 8,
-            height: '100%',
-            boxSizing: 'border-box',
+            height: "100%",
+            boxSizing: "border-box",
             ...column.style,
             ...(isPinned ? styles?.pinnedCell : undefined),
             ...styles?.cell,
@@ -259,15 +294,17 @@ const Cell = React.memo(
       );
     }
 
-    if (column.key === '__select__' && rowSelection && rowKey !== undefined) {
+    if (column.key === "__select__" && rowSelection && rowKey !== undefined) {
       const checkboxProps = rowSelection.getCheckboxProps?.(record) ?? {
         disabled: false,
       };
 
-      const rawKey: React.Key = getRawRowKey ? getRawRowKey(record, rowIndex) : rowKey!;
+      const rawKey: React.Key = getRawRowKey
+        ? getRawRowKey(record, rowIndex)
+        : rowKey!;
 
       const content =
-        rowSelection.type === 'radio' ? (
+        rowSelection.type === "radio" ? (
           <input
             type="radio"
             checked={!!isSelected}
@@ -275,9 +312,13 @@ const Cell = React.memo(
             onChange={(e) => {
               e.stopPropagation();
               rowSelection.onSelect?.(record, true, [record], e.nativeEvent);
-              rowSelection.onChange?.([rawKey], [record], { type: 'single' });
+              rowSelection.onChange?.([rawKey], [record], { type: "single" });
             }}
-            style={{ cursor: 'pointer', accentColor,backgroundColor:'#94A3B8' }}
+            style={{
+              cursor: "pointer",
+              accentColor,
+              backgroundColor: "#94A3B8",
+            }}
           />
         ) : (
           <input
@@ -301,29 +342,33 @@ const Cell = React.memo(
                 e.nativeEvent,
               );
               rowSelection.onChange?.(newSelected, newSelectedRows, {
-                type: 'multiple',
+                type: "multiple",
               });
             }}
-            style={{ cursor: "pointer", accentColor,backgroundColor:'#94A3B8' }}
+            style={{
+              cursor: "pointer",
+              accentColor,
+              backgroundColor: "#94A3B8",
+            }}
           />
         );
 
       return (
         <div
-          className={`${column.className ?? ''} ${classNames?.cell ?? ''} ${isPinned ? (classNames?.pinnedCell ?? '') : ''}`}
+          className={`${column.className ?? ""} ${classNames?.cell ?? ""} ${isPinned ? (classNames?.pinnedCell ?? "") : ""}`}
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            overflow: 'hidden',
-            borderBottom: '1px solid rgba(128,128,128,0.2)',
+            display: "flex",
+            alignItems: "center",
+            overflow: "hidden",
+            borderBottom: "1px solid rgba(128,128,128,0.2)",
             paddingLeft: 8,
             paddingRight: 8,
             justifyContent:
-              column.key === '__select__' || column.key === '__expand__'
-                ? 'center'
+              column.key === "__select__" || column.key === "__expand__"
+                ? "center"
                 : undefined,
-            height: '100%',
-            boxSizing: 'border-box',
+            height: "100%",
+            boxSizing: "border-box",
             ...column.style,
             ...(isPinned ? styles?.pinnedCell : undefined),
             ...styles?.cell,
@@ -353,41 +398,45 @@ const Cell = React.memo(
       try {
         content = column.render(value, record, rowIndex);
       } catch {
-        content = String(value ?? '');
+        content = String(value ?? "");
       }
     } else {
-      content = (value as React.ReactNode) ?? '';
+      content = (value as React.ReactNode) ?? "";
     }
 
-    const isSystem = column.key === '__select__' || column.key === '__expand__';
+    const isSystem = column.key === "__select__" || column.key === "__expand__";
 
     return (
       <div
-        className={`${column.className ?? ''} ${classNames?.cell ?? ''} ${isPinned ? (classNames?.pinnedCell ?? '') : ''}`}
+        className={`${column.className ?? ""} ${classNames?.cell ?? ""} ${isPinned ? (classNames?.pinnedCell ?? "") : ""}`}
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          overflow: 'hidden',
-          borderBottom: '1px solid rgba(128,128,128,0.2)',
+          display: "flex",
+          alignItems: "center",
+          overflow: "hidden",
+          borderBottom: "1px solid rgba(128,128,128,0.2)",
           paddingLeft: 8,
           paddingRight: 8,
-          justifyContent: isSystem ? 'center' : undefined,
-          height: '100%',
-          boxSizing: 'border-box',
+          justifyContent: isSystem ? "center" : undefined,
+          height: "100%",
+          boxSizing: "border-box",
           minWidth: 0,
           ...column.style,
           ...(isPinned ? styles?.pinnedCell : undefined),
           ...styles?.cell,
         }}
       >
-        {isSystem ? content : showEditor ? content : (
+        {isSystem ? (
+          content
+        ) : showEditor ? (
+          content
+        ) : (
           <div
             style={{
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
               minWidth: 0,
-              maxWidth: '100%',
+              maxWidth: "100%",
             }}
           >
             {content}
@@ -405,13 +454,13 @@ const Cell = React.memo(
     if (prev.onEdit !== next.onEdit) return false;
     if (prev.isEditing !== next.isEditing) return false;
     if (prev.onEditComplete !== next.onEditComplete) return false;
-    if (prev.column.key === '__select__') {
+    if (prev.column.key === "__select__") {
       return (
         prev.isSelected === next.isSelected &&
         prev.normalizedSelectedKeys === next.normalizedSelectedKeys
       );
     }
-    if (prev.column.key === '__expand__') {
+    if (prev.column.key === "__expand__") {
       return prev.isExpanded === next.isExpanded;
     }
     if (prev.column.render) {
@@ -426,7 +475,7 @@ const Cell = React.memo(
     );
   },
 );
-Cell.displayName = 'Cell';
+Cell.displayName = "Cell";
 
 /** Wraps expanded row content and reports its height via ResizeObserver. */
 const MeasuredExpandedRow = React.memo(
@@ -462,7 +511,42 @@ const MeasuredExpandedRow = React.memo(
     return <div ref={ref}>{children}</div>;
   },
 );
-MeasuredExpandedRow.displayName = 'MeasuredExpandedRow';
+MeasuredExpandedRow.displayName = "MeasuredExpandedRow";
+
+/** Measures actual row height when dynamic row heights are enabled. */
+const DynamicRowMeasurer = React.memo(
+  ({
+    index,
+    onHeightChange,
+    children,
+  }: {
+    index: number;
+    onHeightChange: (index: number, height: number) => void;
+    children: React.ReactNode;
+  }) => {
+    const ref = useRef<HTMLDivElement>(null);
+    const onHeightChangeRef = useRef(onHeightChange);
+    useEffect(() => {
+      onHeightChangeRef.current = onHeightChange;
+    }, [onHeightChange]);
+
+    useEffect(() => {
+      const el = ref.current;
+      if (!el) return;
+      const observer = new ResizeObserver((entries) => {
+        const height = entries[0]?.borderBoxSize?.[0]?.blockSize;
+        if (height != null && height > 0) {
+          onHeightChangeRef.current(index, Math.ceil(height));
+        }
+      });
+      observer.observe(el);
+      return () => observer.disconnect();
+    }, [index]);
+
+    return <div ref={ref}>{children}</div>;
+  },
+);
+DynamicRowMeasurer.displayName = "DynamicRowMeasurer";
 
 const TableBody: React.FC<TableBodyProps> = ({
   data,
@@ -494,10 +578,15 @@ const TableBody: React.FC<TableBodyProps> = ({
   onEdit,
   editingCell,
   onEditComplete,
+  enableDynamicRowHeight = false,
+  onRowHeightChange,
 }) => {
   const virtualItems = rowVirtualizer.getVirtualItems();
   const totalSize = rowVirtualizer.getTotalSize();
-  const selectedKeySet = useMemo(() => new Set(normalizedSelectedKeys), [normalizedSelectedKeys]);
+  const selectedKeySet = useMemo(
+    () => new Set(normalizedSelectedKeys),
+    [normalizedSelectedKeys],
+  );
 
   const safeData = data ?? [];
   const safeColumns = orderedColumns ?? [];
@@ -508,8 +597,7 @@ const TableBody: React.FC<TableBodyProps> = ({
     return [...pinnedTopData, ...safeData, ...pinnedBottomData];
   }, [pinnedTopData, safeData, pinnedBottomData]);
 
-  const pinnedRowBg =
-    (styles as any)?.pinnedRowBg ?? (styles as any)?.pinnedBg;
+  const pinnedRowBg = (styles as any)?.pinnedRowBg ?? (styles as any)?.pinnedBg;
 
   const columnStyles = useMemo(() => {
     return safeColumns.map((col, colIndex) => {
@@ -517,20 +605,20 @@ const TableBody: React.FC<TableBodyProps> = ({
       const isPinned = Boolean(col.pinned);
 
       let zIndex = 0;
-      if (col.key === '__select__' || col.key === '__expand__') zIndex = 11;
+      if (col.key === "__select__" || col.key === "__expand__") zIndex = 11;
       else if (isPinned) zIndex = 2;
 
       const style: React.CSSProperties = {
         gridColumn: colIndex + 1,
         gridRow: bodyGridRow,
         height: `${totalSize}px`,
-        position: isPinned ? 'sticky' : 'relative',
+        position: isPinned ? "sticky" : "relative",
         zIndex,
       };
 
-      if (col.pinned === 'left' && stickyOffset !== undefined)
+      if (col.pinned === "left" && stickyOffset !== undefined)
         style.left = `${stickyOffset}px`;
-      else if (col.pinned === 'right' && stickyOffset !== undefined)
+      else if (col.pinned === "right" && stickyOffset !== undefined)
         style.right = `${stickyOffset}px`;
 
       if (isPinned) {
@@ -553,7 +641,7 @@ const TableBody: React.FC<TableBodyProps> = ({
         return (
           <div
             key={`spacer-${colStyle.key}`}
-            {...(colStyle.isPinned ? { 'data-bt-pinned': '' } : {})}
+            {...(colStyle.isPinned ? { "data-bt-pinned": "" } : {})}
             style={colStyle.style}
           >
             {virtualItems.map((virtualRow: VirtualItem) => {
@@ -564,17 +652,32 @@ const TableBody: React.FC<TableBodyProps> = ({
                 : String(virtualRow.index);
               const isSelected = selectedKeySet.has(rowKey);
               const isExpanded = resolvedExpandedKeys?.has(rowKey) ?? false;
-              const cellValue = col.dataIndex != null ? row[col.dataIndex] : undefined;
-              const isRowShimmer = isLoading || rowKey.startsWith('__shimmer_');
+              const cellValue =
+                col.dataIndex != null ? row[col.dataIndex] : undefined;
+              const isRowShimmer = isLoading || rowKey.startsWith("__shimmer_");
               let recordFingerprint: string | undefined;
               if (hasRender && !isRowShimmer) {
-                try { recordFingerprint = JSON.stringify(row); } catch { recordFingerprint = rowKey; }
+                try {
+                  recordFingerprint = JSON.stringify(row);
+                } catch {
+                  recordFingerprint = rowKey;
+                }
               }
 
-              let rowCls = '';
-              try { rowCls = rowClassName ? rowClassName(row, virtualRow.index) : ''; } catch { /* ignore */ }
+              let rowCls = "";
+              try {
+                rowCls = rowClassName
+                  ? rowClassName(row, virtualRow.index)
+                  : "";
+              } catch {
+                /* ignore */
+              }
               let rowSty: React.CSSProperties | undefined;
-              try { rowSty = rowStyle ? rowStyle(row, virtualRow.index) : undefined; } catch { /* ignore */ }
+              try {
+                rowSty = rowStyle ? rowStyle(row, virtualRow.index) : undefined;
+              } catch {
+                /* ignore */
+              }
 
               return (
                 <div
@@ -585,43 +688,99 @@ const TableBody: React.FC<TableBodyProps> = ({
                   data-selected={isSelected || undefined}
                   className={rowCls || undefined}
                   style={{
-                    position: 'absolute',
+                    position: "absolute",
                     top: `${virtualRow.start}px`,
                     left: 0,
                     right: 0,
-                    height: `${virtualRow.size}px`,
-                    ...rowSty,
+                    height: enableDynamicRowHeight
+                      ? undefined
+                      : `${virtualRow.size}px`,
+                    minHeight: enableDynamicRowHeight
+                      ? `${rowHeight}px`
+                      : undefined,
                   }}
                 >
-                  <div
-                    style={{
-                      height: `${rowHeight}px`,
-                      position: 'relative',
-                    }}
-                  >
-                    <Cell
-                      value={cellValue}
-                      record={row}
-                      column={col}
-                      rowIndex={virtualRow.index}
-                      classNames={classNames}
-                      styles={styles}
-                      isSelected={isSelected}
-                      isExpanded={isExpanded}
-                      rowSelection={rowSelection}
-                      normalizedSelectedKeys={normalizedSelectedKeys}
-                      rowKey={rowKey}
-                      allData={allDataForSelection}
-                      getRowKey={getRowKey}
-                      getRawRowKey={getRawRowKey}
-                      accentColor={accentColor}
-                      isLoading={isRowShimmer}
-                      recordFingerprint={recordFingerprint}
-                      onEdit={onEdit}
-                      isEditing={editingCell?.rowKey === rowKey && editingCell?.columnKey === col.key}
-                      onEditComplete={onEditComplete}
-                    />
-                  </div>
+                  {enableDynamicRowHeight &&
+                  onRowHeightChange &&
+                  colIndex === 0 ? (
+                    <DynamicRowMeasurer
+                      index={virtualRow.index}
+                      onHeightChange={onRowHeightChange}
+                    >
+                      <div
+                        style={{
+                          minHeight: `${rowHeight}px`,
+                          position: "relative",
+                          ...rowSty,
+                        }}
+                      >
+                        <Cell
+                          value={cellValue}
+                          record={row}
+                          column={col}
+                          rowIndex={virtualRow.index}
+                          classNames={classNames}
+                          styles={styles}
+                          isSelected={isSelected}
+                          isExpanded={isExpanded}
+                          rowSelection={rowSelection}
+                          normalizedSelectedKeys={normalizedSelectedKeys}
+                          rowKey={rowKey}
+                          allData={allDataForSelection}
+                          getRowKey={getRowKey}
+                          getRawRowKey={getRawRowKey}
+                          accentColor={accentColor}
+                          isLoading={isRowShimmer}
+                          recordFingerprint={recordFingerprint}
+                          onEdit={onEdit}
+                          isEditing={
+                            editingCell?.rowKey === rowKey &&
+                            editingCell?.columnKey === col.key
+                          }
+                          onEditComplete={onEditComplete}
+                        />
+                      </div>
+                    </DynamicRowMeasurer>
+                  ) : (
+                    <div
+                      style={{
+                        height: enableDynamicRowHeight
+                          ? undefined
+                          : `${rowHeight}px`,
+                        minHeight: enableDynamicRowHeight
+                          ? `${rowHeight}px`
+                          : undefined,
+                        position: "relative",
+                        ...rowSty,
+                      }}
+                    >
+                      <Cell
+                        value={cellValue}
+                        record={row}
+                        column={col}
+                        rowIndex={virtualRow.index}
+                        classNames={classNames}
+                        styles={styles}
+                        isSelected={isSelected}
+                        isExpanded={isExpanded}
+                        rowSelection={rowSelection}
+                        normalizedSelectedKeys={normalizedSelectedKeys}
+                        rowKey={rowKey}
+                        allData={allDataForSelection}
+                        getRowKey={getRowKey}
+                        getRawRowKey={getRawRowKey}
+                        accentColor={accentColor}
+                        isLoading={isRowShimmer}
+                        recordFingerprint={recordFingerprint}
+                        onEdit={onEdit}
+                        isEditing={
+                          editingCell?.rowKey === rowKey &&
+                          editingCell?.columnKey === col.key
+                        }
+                        onEditComplete={onEditComplete}
+                      />
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -632,12 +791,12 @@ const TableBody: React.FC<TableBodyProps> = ({
       {expandable && (
         <div
           style={{
-            gridColumn: '1 / -1',
+            gridColumn: "1 / -1",
             gridRow: bodyGridRow,
             height: `${totalSize}px`,
-            position: 'relative',
+            position: "relative",
             zIndex: 15,
-            pointerEvents: 'none',
+            pointerEvents: "none",
           }}
         >
           {virtualItems.map((virtualRow: VirtualItem) => {
@@ -651,24 +810,31 @@ const TableBody: React.FC<TableBodyProps> = ({
 
             let expandedRenderResult: React.ReactNode = null;
             try {
-              expandedRenderResult = expandable.expandedRowRender(row, virtualRow.index, 0, true);
-            } catch { /* gracefully swallow render errors in expanded content */ }
+              expandedRenderResult = expandable.expandedRowRender(
+                row,
+                virtualRow.index,
+                0,
+                true,
+              );
+            } catch {
+              /* gracefully swallow render errors in expanded content */
+            }
 
             const expandedContent = (
               <div
-                className={classNames?.expandedRow ?? ''}
+                className={classNames?.expandedRow ?? ""}
                 style={{
-                  position: 'sticky',
+                  position: "sticky",
                   left: 0,
                   zIndex: 5,
                   width:
                     scrollAreaWidth && scrollAreaWidth > 0
                       ? `${scrollAreaWidth}px`
-                      : '100%',
-                  overflow: 'auto',
-                  pointerEvents: 'auto',
-                  borderBottom: '1px solid rgba(128,128,128,0.2)',
-                  backgroundColor: 'rgba(128,128,128,0.06)',
+                      : "100%",
+                  overflow: "auto",
+                  pointerEvents: "auto",
+                  borderBottom: "1px solid rgba(128,128,128,0.2)",
+                  backgroundColor: "rgba(128,128,128,0.06)",
                   padding: 20,
                   ...(maxExpandedRowHeight
                     ? { maxHeight: `${maxExpandedRowHeight}px` }
@@ -684,7 +850,7 @@ const TableBody: React.FC<TableBodyProps> = ({
               <div
                 key={`expanded-${rk}`}
                 style={{
-                  position: 'absolute',
+                  position: "absolute",
                   top: virtualRow.start + rowHeight,
                   left: 0,
                   right: 0,
@@ -709,42 +875,51 @@ const TableBody: React.FC<TableBodyProps> = ({
       {pinnedTopData.length > 0 && (
         <div
           style={{
-            gridColumn: '1 / -1',
+            gridColumn: "1 / -1",
             gridRow: bodyGridRow,
             height: `${totalSize}px`,
-            position: 'relative',
+            position: "relative",
             zIndex: 20,
-            pointerEvents: 'none',
+            pointerEvents: "none",
           }}
         >
           <div
             style={{
-              position: 'sticky',
+              position: "sticky",
               top: headerHeight,
-              pointerEvents: 'auto',
-              boxShadow: '0 2px 6px -1px rgba(0,0,0,0.08)',
+              pointerEvents: "auto",
+              boxShadow: "0 2px 6px -1px rgba(0,0,0,0.08)",
             }}
           >
             {pinnedTopData.map((row, rowIdx) => {
               if (row == null) return null;
-              const rk = getRowKey
-                ? getRowKey(row, rowIdx)
-                : String(rowIdx);
+              const rk = getRowKey ? getRowKey(row, rowIdx) : String(rowIdx);
               const isSelected = selectedKeySet.has(rk);
               const isExpanded = resolvedExpandedKeys?.has(rk) ?? false;
 
-              let rowCls = '';
-              try { rowCls = rowClassName ? rowClassName(row, rowIdx) : ''; } catch { /* ignore */ }
+              let rowCls = "";
+              try {
+                rowCls = rowClassName ? rowClassName(row, rowIdx) : "";
+              } catch {
+                /* ignore */
+              }
               let rowSty: React.CSSProperties | undefined;
-              try { rowSty = rowStyle ? rowStyle(row, rowIdx) : undefined; } catch { /* ignore */ }
+              try {
+                rowSty = rowStyle ? rowStyle(row, rowIdx) : undefined;
+              } catch {
+                /* ignore */
+              }
 
               return (
                 <div
                   key={`pinned-top-${rk}`}
-                  className={`${classNames?.pinnedRow ?? ''} ${rowCls}`.trim() || undefined}
+                  className={
+                    `${classNames?.pinnedRow ?? ""} ${rowCls}`.trim() ||
+                    undefined
+                  }
                   style={{
-                    display: 'grid',
-                    gridTemplateColumns: gridTemplateColumns ?? '',
+                    display: "grid",
+                    gridTemplateColumns: gridTemplateColumns ?? "",
                     minWidth: totalTableWidth
                       ? `${totalTableWidth}px`
                       : undefined,
@@ -753,20 +928,22 @@ const TableBody: React.FC<TableBodyProps> = ({
                   }}
                 >
                   {safeColumns.map((col) => {
-                    const cellValue = col.dataIndex != null ? row[col.dataIndex] : undefined;
+                    const cellValue =
+                      col.dataIndex != null ? row[col.dataIndex] : undefined;
                     const stickyOffset = columnOffsets.get(col.key);
                     const isPinned = Boolean(col.pinned);
                     let zIndex = 0;
-                    if (
-                      col.key === '__select__' ||
-                      col.key === '__expand__'
-                    )
+                    if (col.key === "__select__" || col.key === "__expand__")
                       zIndex = 11;
                     else if (isPinned) zIndex = 2;
 
                     let recordFingerprint: string | undefined;
                     if (col.render) {
-                      try { recordFingerprint = JSON.stringify(row); } catch { recordFingerprint = rk; }
+                      try {
+                        recordFingerprint = JSON.stringify(row);
+                      } catch {
+                        recordFingerprint = rk;
+                      }
                     }
 
                     return (
@@ -777,19 +954,19 @@ const TableBody: React.FC<TableBodyProps> = ({
                         data-bt-cell=""
                         data-selected={isSelected || undefined}
                         style={{
-                          position: isPinned ? 'sticky' : 'relative',
-                          ...(col.pinned === 'left' &&
+                          position: isPinned ? "sticky" : "relative",
+                          ...(col.pinned === "left" &&
                           stickyOffset !== undefined
                             ? { left: `${stickyOffset}px` }
                             : {}),
-                          ...(col.pinned === 'right' &&
+                          ...(col.pinned === "right" &&
                           stickyOffset !== undefined
                             ? { right: `${stickyOffset}px` }
                             : {}),
                           zIndex,
                           backgroundColor: pinnedRowBg,
-                          backdropFilter: 'blur(12px)',
-                          WebkitBackdropFilter: 'blur(12px)',
+                          backdropFilter: "blur(12px)",
+                          WebkitBackdropFilter: "blur(12px)",
                           ...(isPinned && styles?.pinnedCell
                             ? styles.pinnedCell
                             : {}),
@@ -798,7 +975,7 @@ const TableBody: React.FC<TableBodyProps> = ({
                         <div
                           style={{
                             height: `${rowHeight}px`,
-                            position: 'relative',
+                            position: "relative",
                           }}
                         >
                           <Cell
@@ -820,7 +997,10 @@ const TableBody: React.FC<TableBodyProps> = ({
                             isLoading={false}
                             recordFingerprint={recordFingerprint}
                             onEdit={onEdit}
-                            isEditing={editingCell?.rowKey === rk && editingCell?.columnKey === col.key}
+                            isEditing={
+                              editingCell?.rowKey === rk &&
+                              editingCell?.columnKey === col.key
+                            }
                             onEditComplete={onEditComplete}
                           />
                         </div>
@@ -837,45 +1017,54 @@ const TableBody: React.FC<TableBodyProps> = ({
       {pinnedBottomData.length > 0 && (
         <div
           style={{
-            gridColumn: '1 / -1',
+            gridColumn: "1 / -1",
             gridRow: bodyGridRow,
             height: `${totalSize}px`,
-            position: 'relative',
+            position: "relative",
             zIndex: 20,
-            pointerEvents: 'none',
-            display: 'flex',
-            flexDirection: 'column',
+            pointerEvents: "none",
+            display: "flex",
+            flexDirection: "column",
           }}
         >
           <div
             style={{
-              marginTop: 'auto',
-              position: 'sticky',
+              marginTop: "auto",
+              position: "sticky",
               bottom: 0,
-              pointerEvents: 'auto',
-              boxShadow: '0 -2px 6px -1px rgba(0,0,0,0.08)',
+              pointerEvents: "auto",
+              boxShadow: "0 -2px 6px -1px rgba(0,0,0,0.08)",
             }}
           >
             {pinnedBottomData.map((row, rowIdx) => {
               if (row == null) return null;
-              const rk = getRowKey
-                ? getRowKey(row, rowIdx)
-                : String(rowIdx);
+              const rk = getRowKey ? getRowKey(row, rowIdx) : String(rowIdx);
               const isSelected = selectedKeySet.has(rk);
               const isExpanded = resolvedExpandedKeys?.has(rk) ?? false;
 
-              let rowCls = '';
-              try { rowCls = rowClassName ? rowClassName(row, rowIdx) : ''; } catch { /* ignore */ }
+              let rowCls = "";
+              try {
+                rowCls = rowClassName ? rowClassName(row, rowIdx) : "";
+              } catch {
+                /* ignore */
+              }
               let rowSty: React.CSSProperties | undefined;
-              try { rowSty = rowStyle ? rowStyle(row, rowIdx) : undefined; } catch { /* ignore */ }
+              try {
+                rowSty = rowStyle ? rowStyle(row, rowIdx) : undefined;
+              } catch {
+                /* ignore */
+              }
 
               return (
                 <div
                   key={`pinned-bottom-${rk}`}
-                  className={`${classNames?.pinnedRow ?? ''} ${rowCls}`.trim() || undefined}
+                  className={
+                    `${classNames?.pinnedRow ?? ""} ${rowCls}`.trim() ||
+                    undefined
+                  }
                   style={{
-                    display: 'grid',
-                    gridTemplateColumns: gridTemplateColumns ?? '',
+                    display: "grid",
+                    gridTemplateColumns: gridTemplateColumns ?? "",
                     minWidth: totalTableWidth
                       ? `${totalTableWidth}px`
                       : undefined,
@@ -884,20 +1073,22 @@ const TableBody: React.FC<TableBodyProps> = ({
                   }}
                 >
                   {safeColumns.map((col) => {
-                    const cellValue = col.dataIndex != null ? row[col.dataIndex] : undefined;
+                    const cellValue =
+                      col.dataIndex != null ? row[col.dataIndex] : undefined;
                     const stickyOffset = columnOffsets.get(col.key);
                     const isPinned = Boolean(col.pinned);
                     let zIndex = 0;
-                    if (
-                      col.key === '__select__' ||
-                      col.key === '__expand__'
-                    )
+                    if (col.key === "__select__" || col.key === "__expand__")
                       zIndex = 11;
                     else if (isPinned) zIndex = 2;
 
                     let recordFingerprint: string | undefined;
                     if (col.render) {
-                      try { recordFingerprint = JSON.stringify(row); } catch { recordFingerprint = rk; }
+                      try {
+                        recordFingerprint = JSON.stringify(row);
+                      } catch {
+                        recordFingerprint = rk;
+                      }
                     }
 
                     return (
@@ -908,19 +1099,19 @@ const TableBody: React.FC<TableBodyProps> = ({
                         data-bt-cell=""
                         data-selected={isSelected || undefined}
                         style={{
-                          position: isPinned ? 'sticky' : 'relative',
-                          ...(col.pinned === 'left' &&
+                          position: isPinned ? "sticky" : "relative",
+                          ...(col.pinned === "left" &&
                           stickyOffset !== undefined
                             ? { left: `${stickyOffset}px` }
                             : {}),
-                          ...(col.pinned === 'right' &&
+                          ...(col.pinned === "right" &&
                           stickyOffset !== undefined
                             ? { right: `${stickyOffset}px` }
                             : {}),
                           zIndex,
                           backgroundColor: pinnedRowBg,
-                          backdropFilter: 'blur(12px)',
-                          WebkitBackdropFilter: 'blur(12px)',
+                          backdropFilter: "blur(12px)",
+                          WebkitBackdropFilter: "blur(12px)",
                           ...(isPinned && styles?.pinnedCell
                             ? styles.pinnedCell
                             : {}),
@@ -929,7 +1120,7 @@ const TableBody: React.FC<TableBodyProps> = ({
                         <div
                           style={{
                             height: `${rowHeight}px`,
-                            position: 'relative',
+                            position: "relative",
                           }}
                         >
                           <Cell
@@ -951,7 +1142,10 @@ const TableBody: React.FC<TableBodyProps> = ({
                             isLoading={false}
                             recordFingerprint={recordFingerprint}
                             onEdit={onEdit}
-                            isEditing={editingCell?.rowKey === rk && editingCell?.columnKey === col.key}
+                            isEditing={
+                              editingCell?.rowKey === rk &&
+                              editingCell?.columnKey === col.key
+                            }
                             onEditComplete={onEditComplete}
                           />
                         </div>
@@ -968,6 +1162,6 @@ const TableBody: React.FC<TableBodyProps> = ({
   );
 };
 
-TableBody.displayName = 'TableBody';
+TableBody.displayName = "TableBody";
 
 export default TableBody;

@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import React from 'react';
+import React from "react";
 
 interface IconProps {
   style?: React.CSSProperties;
@@ -8,15 +8,15 @@ interface IconProps {
 }
 
 const svgBase: React.SVGAttributes<SVGSVGElement> = {
-  xmlns: 'http://www.w3.org/2000/svg',
+  xmlns: "http://www.w3.org/2000/svg",
   width: 24,
   height: 24,
-  viewBox: '0 0 24 24',
-  fill: 'none',
-  stroke: 'currentColor',
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
   strokeWidth: 2,
-  strokeLinecap: 'round',
-  strokeLinejoin: 'round',
+  strokeLinecap: "round",
+  strokeLinejoin: "round",
 };
 
 export const GripVerticalIcon: React.FC<IconProps> = ({ style, className }) => (
@@ -137,6 +137,27 @@ export const EyeOffIcon: React.FC<IconProps> = ({ style, className }) => (
   </svg>
 );
 
+export const SearchIcon: React.FC<IconProps> = ({ style, className }) => (
+  <svg {...svgBase} style={style} className={className}>
+    <circle cx="11" cy="11" r="8" />
+    <path d="m21 21-4.3-4.3" />
+  </svg>
+);
+
+export const ColumnsIcon: React.FC<IconProps> = ({ style, className }) => (
+  <svg {...svgBase} style={style} className={className}>
+    <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+    <line x1="12" x2="12" y1="3" y2="21" />
+  </svg>
+);
+
+export const XIcon: React.FC<IconProps> = ({ style, className }) => (
+  <svg {...svgBase} style={style} className={className}>
+    <path d="M18 6 6 18" />
+    <path d="m6 6 12 12" />
+  </svg>
+);
+
 /** Customizable icon overrides for BoltTable. */
 export interface BoltTableIcons {
   gripVertical?: React.ReactNode;
@@ -154,4 +175,7 @@ export interface BoltTableIcons {
   chevronsRight?: React.ReactNode;
   copy?: React.ReactNode;
   edit?: React.ReactNode;
+  search?: React.ReactNode;
+  columns?: React.ReactNode;
+  close?: React.ReactNode;
 }

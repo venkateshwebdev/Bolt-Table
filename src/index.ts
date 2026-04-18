@@ -1,8 +1,8 @@
-export { default as BoltTable } from './BoltTable';
-export { default as DraggableHeader } from './DraggableHeader';
-export { default as ResizeOverlay } from './ResizeOverlay';
-export { default as TableBody } from './TableBody';
-export type { ClassNamesTypes, StylesTypes } from './BoltTable';
+export { default as BoltTable } from "./BoltTable";
+export { default as DraggableHeader } from "./DraggableHeader";
+export { default as ResizeOverlay } from "./ResizeOverlay";
+export { default as TableBody } from "./TableBody";
+export type { ClassNamesTypes, StylesTypes } from "./BoltTable";
 export type {
   ColumnType,
   ColumnContextMenuItem,
@@ -13,5 +13,6 @@ export type {
   SortDirection,
   DataRecord,
   RowPinningConfig,
-} from './types';
-export type { BoltTableIcons } from './icons';
+  ColumnPersistenceConfig,
+} from "./types";
+export type { BoltTableIcons } from "./icons";
