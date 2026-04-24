@@ -227,6 +227,12 @@ interface BoltTableProps<T extends DataRecord = DataRecord> {
 
   /** Called when the global search value changes. */
   readonly onGlobalSearchChange?: (value: string) => void;
+
+  /** Extra content rendered in the toolbar between the search bar and the column-settings button. */
+  readonly toolbarContent?: React.ReactNode;
+
+  /** Label for the column-settings button. Defaults to "Columns". */
+  readonly columnSettingsLabel?: React.ReactNode;
 }
 
 export interface ClassNamesTypes {
@@ -379,6 +385,8 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   hideGlobalSearch = false,
   globalSearchValue,
   onGlobalSearchChange,
+  toolbarContent,
+  columnSettingsLabel,
 }: BoltTableProps<T>) {
   const data = useMemo<T[]>(() => {
     if (!Array.isArray(rawData)) return STABLE_EMPTY_DATA as T[];
@@ -1206,6 +1214,12 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     return offsets;
   }, [leftPinned, rightPinned]);
 
+  const columnGridIndexMap = useMemo(() => {
+    const map = new Map<string, number>();
+    orderedColumns.forEach((col, i) => map.set(col.key, i + 1));
+    return map;
+  }, [orderedColumns]);
+
   const handleTogglePin = (
     columnKey: string,
     pinned: "left" | "right" | false,
@@ -2020,6 +2034,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                 )}
               </div>
             )}
+            {toolbarContent}
             {showColumnSettings && (
               <div style={{ position: "relative", flexShrink: 0 }}>
                 <button
@@ -2043,7 +2058,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                   {icons?.columns ?? (
                     <ColumnsIcon style={{ width: 14, height: 14 }} />
                   )}
-                  <span>Columns</span>
+                  <span>{columnSettingsLabel ?? "Columns"}</span>
                 </button>
                 {showColumnPicker && (
                   <div
@@ -2709,6 +2724,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                     onEditComplete={handleEditComplete}
                     enableDynamicRowHeight={enableDynamicRowHeight}
                     onRowHeightChange={handleRowHeightChange}
+                    columnGridIndexMap={columnGridIndexMap}
                   />
                 )}
               </div>

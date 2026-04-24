@@ -118,6 +118,9 @@ interface TableBodyProps {
 
   /** Called when a row's measured height changes. Used by the parent to update the virtualizer. */
   onRowHeightChange?: (index: number, height: number) => void;
+
+  /** Maps column key → 1-based CSS grid column index in the full (non-virtualized) grid. Required for correct placement when column virtualization is enabled. */
+  columnGridIndexMap?: Map<string, number>;
 }
 
 const SHIMMER_WIDTHS = [55, 70, 45, 80, 60, 50, 75, 65];
@@ -580,6 +583,7 @@ const TableBody: React.FC<TableBodyProps> = ({
   onEditComplete,
   enableDynamicRowHeight = false,
   onRowHeightChange,
+  columnGridIndexMap,
 }) => {
   const virtualItems = rowVirtualizer.getVirtualItems();
   const totalSize = rowVirtualizer.getTotalSize();
@@ -608,8 +612,10 @@ const TableBody: React.FC<TableBodyProps> = ({
       if (col.key === "__select__" || col.key === "__expand__") zIndex = 11;
       else if (isPinned) zIndex = 2;
 
+      const gridCol = columnGridIndexMap?.get(col.key) ?? colIndex + 1;
+
       const style: React.CSSProperties = {
-        gridColumn: colIndex + 1,
+        gridColumn: gridCol,
         gridRow: bodyGridRow,
         height: `${totalSize}px`,
         position: isPinned ? "sticky" : "relative",
@@ -627,7 +633,7 @@ const TableBody: React.FC<TableBodyProps> = ({
 
       return { key: col.key, style, isPinned };
     });
-  }, [safeColumns, columnOffsets, totalSize, styles, bodyGridRow]);
+  }, [safeColumns, columnOffsets, totalSize, styles, bodyGridRow, columnGridIndexMap]);
 
   if (safeData.length === 0 || safeColumns.length === 0) return null;
 
