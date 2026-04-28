@@ -213,10 +213,13 @@ const DraggableHeader = React.memo(
       overflow: "hidden",
       textOverflow: "ellipsis",
       whiteSpace: "nowrap" as const,
+      boxSizing: "border-box",
       borderTop: "none",
-      borderRight: "0.5px solid rgba(128,128,128,0.2)",
+      borderLeft: "none",
       borderBottom: "1px solid rgba(128,128,128,0.2)",
-      borderLeft: isFirstColumn ? "none" : "0.5px solid rgba(128,128,128,0.2)",
+      borderRight: isLastColumn
+        ? "none"
+        : "1px solid rgba(128,128,128,0.2)",
       ...(column.pinned === "left" && stickyOffset !== undefined
         ? { left: `${stickyOffset}px` }
         : {}),
@@ -269,7 +272,6 @@ const DraggableHeader = React.memo(
               whiteSpace: 'nowrap' as const,
               paddingLeft: 8,
               paddingRight: 8,
-              borderLeft: isFirstColumn ? 'none' : '1px solid rgba(128,128,128,0.2)',
               fontWeight: 500,
               cursor: isPinned ? 'default' : 'grab',
             }}

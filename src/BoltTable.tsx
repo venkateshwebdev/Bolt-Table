@@ -2417,6 +2417,9 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                     });
                     if (minIdx === Infinity) return null;
 
+                    const groupEndsAtLastCol =
+                      maxIdx === orderedColumns.length - 1;
+
                     return (
                       <div
                         key={`group-${group.key}`}
@@ -2435,7 +2438,11 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                           overflow: "hidden",
                           textOverflow: "ellipsis",
                           whiteSpace: "nowrap" as const,
+                          boxSizing: "border-box",
                           borderBottom: "1px solid rgba(128,128,128,0.2)",
+                          borderRight: groupEndsAtLastCol
+                            ? "none"
+                            : "1px solid rgba(128,128,128,0.2)",
                           fontWeight: 500,
                           userSelect: "none",
                           ...group.style,
@@ -2477,7 +2484,9 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                             overflow: "hidden",
                             textOverflow: "ellipsis",
                             whiteSpace: "nowrap" as const,
+                            boxSizing: "border-box",
                             borderBottom: "1px solid rgba(128,128,128,0.2)",
+                            borderRight: "1px solid rgba(128,128,128,0.2)",
                             position: "sticky",
                             left: columnOffsets.get("__select__") ?? 0,
                             top: 0,
@@ -2550,7 +2559,9 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                             overflow: "hidden",
                             textOverflow: "ellipsis",
                             whiteSpace: "nowrap" as const,
+                            boxSizing: "border-box",
                             borderBottom: "1px solid rgba(128,128,128,0.2)",
+                            borderRight: "1px solid rgba(128,128,128,0.2)",
                             position: "sticky",
                             left: columnOffsets.get("__expand__") ?? 0,
                             top: 0,
