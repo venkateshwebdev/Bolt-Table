@@ -3300,52 +3300,90 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                     {(
                       menuCol.columnCellContextMenuItems as {
                         key: string;
-                        label: React.ReactNode;
-                        icon?: React.ReactNode;
+                        label:
+                          | React.ReactNode
+                          | ((
+                              columnKey: string,
+                              record: T,
+                              rowIndex: number,
+                            ) => React.ReactNode);
+                        icon?:
+                          | React.ReactNode
+                          | ((
+                              columnKey: string,
+                              record: T,
+                              rowIndex: number,
+                            ) => React.ReactNode);
                         danger?: boolean;
                         disabled?: boolean;
-                        onClick: (
+                        onClick?: (
                           columnKey: string,
                           record: T,
                           rowIndex: number,
                         ) => void;
                       }[]
-                    ).map((item) => (
-                      <button
-                        type="button"
-                        key={item.key}
-                        data-bt-ctx-item=""
-                        disabled={item.disabled}
-                        style={{
-                          ...btnStyle,
-                          cursor: item.disabled ? "not-allowed" : "pointer",
-                          opacity: item.disabled ? 0.5 : 1,
-                          color: item.danger ? "#ef4444" : "inherit",
-                        }}
-                        onClick={() => {
-                          if (menuRecord) {
-                            item.onClick(menuCol.key, menuRecord, menuRowIndex);
-                          }
-                          setCellContextMenu(null);
-                        }}
-                      >
-                        {item.icon && (
-                          <span
-                            style={{
-                              display: "flex",
-                              width: 14,
-                              height: 14,
-                              alignItems: "center",
-                              justifyContent: "center",
-                              flexShrink: 0,
-                            }}
-                          >
-                            {item.icon}
-                          </span>
-                        )}
-                        {item.label}
-                      </button>
-                    ))}
+                    ).map((item) => {
+                      const resolvedIcon =
+                        typeof item.icon === "function"
+                          ? menuRecord
+                            ? item.icon(
+                                menuCol.key,
+                                menuRecord,
+                                menuRowIndex,
+                              )
+                            : null
+                          : item.icon;
+                      const resolvedLabel =
+                        typeof item.label === "function"
+                          ? menuRecord
+                            ? item.label(
+                                menuCol.key,
+                                menuRecord,
+                                menuRowIndex,
+                              )
+                            : null
+                          : item.label;
+                      return (
+                        <button
+                          type="button"
+                          key={item.key}
+                          data-bt-ctx-item=""
+                          disabled={item.disabled}
+                          style={{
+                            ...btnStyle,
+                            cursor: item.disabled ? "not-allowed" : "pointer",
+                            opacity: item.disabled ? 0.5 : 1,
+                            color: item.danger ? "#ef4444" : "inherit",
+                          }}
+                          onClick={() => {
+                            if (menuRecord && item.onClick) {
+                              item.onClick(
+                                menuCol.key,
+                                menuRecord,
+                                menuRowIndex,
+                              );
+                            }
+                            setCellContextMenu(null);
+                          }}
+                        >
+                          {resolvedIcon && (
+                            <span
+                              style={{
+                                display: "flex",
+                                width: 14,
+                                height: 14,
+                                alignItems: "center",
+                                justifyContent: "center",
+                                flexShrink: 0,
+                              }}
+                            >
+                              {resolvedIcon}
+                            </span>
+                          )}
+                          {resolvedLabel}
+                        </button>
+                      );
+                    })}
                   </>
                 )}
             </div>,

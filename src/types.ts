@@ -83,11 +83,22 @@ export interface CellContextMenuItem<T = unknown> {
   /** Unique identifier for this menu item, used as the React `key`. */
   key: string;
 
-  /** The label shown in the menu. Can be a string or React node. */
-  label: React.ReactNode;
+  /**
+   * The label shown in the menu. Can be a string, React node, or a function
+   * `(columnKey, record, rowIndex) => ReactNode` that returns a custom node
+   * derived from the row being clicked.
+   */
+  label:
+    | React.ReactNode
+    | ((columnKey: string, record: T, rowIndex: number) => React.ReactNode);
 
-  /** Optional icon shown to the left of the label. */
-  icon?: React.ReactNode;
+  /**
+   * Optional icon shown to the left of the label. Can be a React node or a
+   * function `(columnKey, record, rowIndex) => ReactNode` for row-aware icons.
+   */
+  icon?:
+    | React.ReactNode
+    | ((columnKey: string, record: T, rowIndex: number) => React.ReactNode);
 
   /** When `true`, the label renders in red to indicate a destructive action. */
   danger?: boolean;
@@ -95,8 +106,12 @@ export interface CellContextMenuItem<T = unknown> {
   /** When `true`, the item is grayed out and click handler is not called. */
   disabled?: boolean;
 
-  /** Called when the user clicks this menu item. Receives the column key, row record, and row index. */
-  onClick: (columnKey: string, record: T, rowIndex: number) => void;
+  /**
+   * Called when the user clicks this menu item. Receives the column key, row
+   * record, and row index. Optional — omit if the item's label renders its
+   * own interactive content (e.g. a custom React node that handles clicks).
+   */
+  onClick?: (columnKey: string, record: T, rowIndex: number) => void;
 }
 
 /** A single item in the column header right-click context menu. */
