@@ -198,7 +198,7 @@ const DraggableHeader = React.memo(
     const isPinned = Boolean(column.pinned);
     const zIndex = isPinned ? 12 : 10;
 
-    const HEADER_SEP = "1px solid rgba(128,128,128,0.3)";
+    const HEADER_SEP = "1px solid rgba(128,128,128,0.2)";
     const headerStyle: any = {
       position: "sticky",
       top: stickyTop,
@@ -215,10 +215,6 @@ const DraggableHeader = React.memo(
       textOverflow: "ellipsis",
       whiteSpace: "nowrap" as const,
       boxSizing: "border-box",
-      borderTop: "none",
-      borderLeft: "none",
-      borderBottom: HEADER_SEP,
-      borderRight: isLastColumn ? "none" : HEADER_SEP,
       ...(column.pinned === "left" && stickyOffset !== undefined
         ? { left: `${stickyOffset}px` }
         : {}),
@@ -228,6 +224,11 @@ const DraggableHeader = React.memo(
       ...column.style,
       ...(isPinned ? styles?.pinnedHeader : {}),
       ...styles?.header,
+      // Borders after spreads so styles.header cannot override them
+      borderTop: "none",
+      borderLeft: "none",
+      borderBottom: HEADER_SEP,
+      borderRight: isLastColumn ? "none" : HEADER_SEP,
     };
 
     return (

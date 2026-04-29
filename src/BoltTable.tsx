@@ -1950,7 +1950,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
             background-color: rgba(128, 128, 128, 0.15);
           }
           [data-bt-header][data-dragging] {
-            opacity: 0.3 !important;
+            opacity: 0.2 !important;
           }
           [data-bt-header][data-drag-over] {
             border: 1px dashed ${accentColor} !important;
@@ -2439,16 +2439,16 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                           textOverflow: "ellipsis",
                           whiteSpace: "nowrap" as const,
                           boxSizing: "border-box",
-                          borderTop: "none",
-                          borderLeft: "none",
-                          borderBottom: "1px solid rgba(128,128,128,0.3)",
-                          borderRight: groupEndsAtLastCol
-                            ? "none"
-                            : "1px solid rgba(128,128,128,0.3)",
                           fontWeight: 500,
                           userSelect: "none",
                           ...group.style,
                           ...styles.header,
+                          borderTop: "none",
+                          borderLeft: "none",
+                          borderBottom: "1px solid rgba(128,128,128,0.2)",
+                          borderRight: groupEndsAtLastCol
+                            ? "none"
+                            : "1px solid rgba(128,128,128,0.2)",
                         }}
                       >
                         {group.title}
@@ -2487,10 +2487,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                             textOverflow: "ellipsis",
                             whiteSpace: "nowrap" as const,
                             boxSizing: "border-box",
-                            borderTop: "none",
-                            borderLeft: "none",
-                            borderBottom: "1px solid rgba(128,128,128,0.3)",
-                            borderRight: "1px solid rgba(128,128,128,0.3)",
                             position: "sticky",
                             left: columnOffsets.get("__select__") ?? 0,
                             top: 0,
@@ -2499,6 +2495,10 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                             gridRow: leafGridRow,
                             ...styles.header,
                             ...styles.pinnedHeader,
+                            borderTop: "none",
+                            borderLeft: "none",
+                            borderBottom: "1px solid rgba(128,128,128,0.2)",
+                            borderRight: "1px solid rgba(128,128,128,0.2)",
                           }}
                         >
                           {rowSelection.type !== "radio" &&
@@ -2564,10 +2564,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                             textOverflow: "ellipsis",
                             whiteSpace: "nowrap" as const,
                             boxSizing: "border-box",
-                            borderTop: "none",
-                            borderLeft: "none",
-                            borderBottom: "1px solid rgba(128,128,128,0.3)",
-                            borderRight: "1px solid rgba(128,128,128,0.3)",
                             position: "sticky",
                             left: columnOffsets.get("__expand__") ?? 0,
                             top: 0,
@@ -2577,6 +2573,10 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                             gridRow: leafGridRow,
                             ...styles.header,
                             ...styles.pinnedHeader,
+                            borderTop: "none",
+                            borderLeft: "none",
+                            borderBottom: "1px solid rgba(128,128,128,0.2)",
+                            borderRight: "1px solid rgba(128,128,128,0.2)",
                           }}
                         />
                       );
@@ -2825,7 +2825,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                   alignItems: "center",
                   justifyContent: "center",
                   fontSize: 12,
-                  opacity: currentPage === 1 ? 0.3 : 1,
+                  opacity: currentPage === 1 ? 0.2 : 1,
                   background: "none",
                   border: "none",
                   padding: 0,
@@ -2851,7 +2851,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                   alignItems: "center",
                   justifyContent: "center",
                   fontSize: 12,
-                  opacity: currentPage === 1 ? 0.3 : 1,
+                  opacity: currentPage === 1 ? 0.2 : 1,
                   background: "none",
                   border: "none",
                   padding: 0,
@@ -2931,7 +2931,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                   alignItems: "center",
                   justifyContent: "center",
                   fontSize: 12,
-                  opacity: currentPage === totalPages ? 0.3 : 1,
+                  opacity: currentPage === totalPages ? 0.2 : 1,
                   background: "none",
                   border: "none",
                   padding: 0,
@@ -2958,7 +2958,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                   alignItems: "center",
                   justifyContent: "center",
                   fontSize: 12,
-                  opacity: currentPage === totalPages ? 0.3 : 1,
+                  opacity: currentPage === totalPages ? 0.2 : 1,
                   background: "none",
                   border: "none",
                   padding: 0,
@@ -3035,7 +3035,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
               textOverflow: "ellipsis",
               whiteSpace: "nowrap" as const,
               borderRadius: 6,
-              border: "1px dashed rgba(128,128,128,0.3)",
+              border: "1px dashed rgba(128,128,128,0.2)",
               boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
               backdropFilter: "blur(16px)",
               WebkitBackdropFilter: "blur(16px)",
