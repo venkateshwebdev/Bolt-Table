@@ -590,41 +590,51 @@ const DraggableHeader = React.memo(
               {customContextMenuItems && customContextMenuItems.length > 0 && (
                 <>
                   <div style={{ marginTop: 4, marginBottom: 4, borderTop: '1px solid rgba(128,128,128,0.2)' }} />
-                  {customContextMenuItems.map((item) => (
-                    <button type="button"
-                      key={item.key}
-                      data-bt-ctx-item=""
-                      disabled={item.disabled}
-                      style={{
-                        display: 'flex',
-                        width: '100%',
-                        alignItems: 'center',
-                        gap: 8,
-                        paddingLeft: 12,
-                        paddingRight: 12,
-                        paddingTop: 6,
-                        paddingBottom: 6,
-                        textAlign: 'left',
-                        background: 'none',
-                        border: 'none',
-                        fontSize: 'inherit',
-                        cursor: item.disabled ? 'not-allowed' : 'pointer',
-                        opacity: item.disabled ? 0.5 : 1,
-                        color: item.danger ? '#ef4444' : 'inherit',
-                      }}
-                      onClick={() => {
-                        item.onClick(column.key);
-                        setContextMenu(null);
-                      }}
-                    >
-                      {item.icon && (
-                        <span style={{ display: 'flex', width: 12, height: 12, alignItems: 'center', justifyContent: 'center' }}>
-                          {item.icon}
-                        </span>
-                      )}
-                      {item.label}
-                    </button>
-                  ))}
+                  {customContextMenuItems.map((item) => {
+                    const resolvedIcon =
+                      typeof item.icon === 'function'
+                        ? item.icon(column.key)
+                        : item.icon;
+                    const resolvedLabel =
+                      typeof item.label === 'function'
+                        ? item.label(column.key)
+                        : item.label;
+                    return (
+                      <button type="button"
+                        key={item.key}
+                        data-bt-ctx-item=""
+                        disabled={item.disabled}
+                        style={{
+                          display: 'flex',
+                          width: '100%',
+                          alignItems: 'center',
+                          gap: 8,
+                          paddingLeft: 12,
+                          paddingRight: 12,
+                          paddingTop: 6,
+                          paddingBottom: 6,
+                          textAlign: 'left',
+                          background: 'none',
+                          border: 'none',
+                          fontSize: 'inherit',
+                          cursor: item.disabled ? 'not-allowed' : 'pointer',
+                          opacity: item.disabled ? 0.5 : 1,
+                          color: item.danger ? '#ef4444' : 'inherit',
+                        }}
+                        onClick={() => {
+                          item.onClick?.(column.key);
+                          setContextMenu(null);
+                        }}
+                      >
+                        {resolvedIcon && (
+                          <span style={{ display: 'flex', width: 12, height: 12, alignItems: 'center', justifyContent: 'center' }}>
+                            {resolvedIcon}
+                          </span>
+                        )}
+                        {resolvedLabel}
+                      </button>
+                    );
+                  })}
                 </>
               )}
                   </>

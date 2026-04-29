@@ -119,11 +119,18 @@ export interface ColumnContextMenuItem {
   /** Unique identifier for this menu item, used as the React `key`. */
   key: string;
 
-  /** The label shown in the menu. Can be a string or React node. */
-  label: React.ReactNode;
+  /**
+   * The label shown in the menu. Can be a string, React node, or a function
+   * `(columnKey) => ReactNode` that returns a custom node derived from the
+   * column being clicked.
+   */
+  label: React.ReactNode | ((columnKey: string) => React.ReactNode);
 
-  /** Optional icon shown to the left of the label. */
-  icon?: React.ReactNode;
+  /**
+   * Optional icon shown to the left of the label. Can be a React node or a
+   * function `(columnKey) => ReactNode` for column-aware icons.
+   */
+  icon?: React.ReactNode | ((columnKey: string) => React.ReactNode);
 
   /** When `true`, the label renders in red to indicate a destructive action. */
   danger?: boolean;
@@ -131,8 +138,11 @@ export interface ColumnContextMenuItem {
   /** When `true`, the item is grayed out and click handler is not called. */
   disabled?: boolean;
 
-  /** Called when the user clicks this menu item. Receives the column `key`. */
-  onClick: (columnKey: string) => void;
+  /**
+   * Called when the user clicks this menu item. Receives the column `key`.
+   * Optional — omit if the item's label renders its own interactive content.
+   */
+  onClick?: (columnKey: string) => void;
 }
 
 /** How the row selection was triggered: `'all'`, `'single'`, or `'multiple'`. */
