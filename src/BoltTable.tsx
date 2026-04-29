@@ -1925,8 +1925,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
           }
           :where([data-bt-header]) {
             background-color: rgba(128,128,128,0.06);
-            backdrop-filter: blur(8px);
-            -webkit-backdrop-filter: blur(8px);
           }
           :where([data-bt-pinned]) {
             background-color: ${styles.pinnedBg ?? "Canvas"};
@@ -2439,7 +2437,12 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                           textOverflow: "ellipsis",
                           whiteSpace: "nowrap" as const,
                           boxSizing: "border-box",
-                          border: "none",
+                          borderTop: "none",
+                          borderLeft: "none",
+                          borderBottom: "1px solid rgba(128,128,128,0.2)",
+                          borderRight: groupEndsAtLastCol
+                            ? "none"
+                            : "1px solid rgba(128,128,128,0.2)",
                           fontWeight: 500,
                           userSelect: "none",
                           ...group.style,
@@ -2482,7 +2485,10 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                             textOverflow: "ellipsis",
                             whiteSpace: "nowrap" as const,
                             boxSizing: "border-box",
-                            border: "none",
+                            borderTop: "none",
+                            borderLeft: "none",
+                            borderBottom: "1px solid rgba(128,128,128,0.2)",
+                            borderRight: "1px solid rgba(128,128,128,0.2)",
                             position: "sticky",
                             left: columnOffsets.get("__select__") ?? 0,
                             top: 0,
@@ -2556,9 +2562,10 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                             textOverflow: "ellipsis",
                             whiteSpace: "nowrap" as const,
                             boxSizing: "border-box",
-                            border: "none",
-                            boxShadow:
-                              "inset -1px 0 0 0 rgba(128,128,128,0.35), inset 0 -1px 0 0 rgba(128,128,128,0.35)",
+                            borderTop: "none",
+                            borderLeft: "none",
+                            borderBottom: "1px solid rgba(128,128,128,0.2)",
+                            borderRight: "1px solid rgba(128,128,128,0.2)",
                             position: "sticky",
                             left: columnOffsets.get("__expand__") ?? 0,
                             top: 0,
