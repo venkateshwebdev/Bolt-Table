@@ -198,7 +198,7 @@ const DraggableHeader = React.memo(
     const isPinned = Boolean(column.pinned);
     const zIndex = isPinned ? 12 : 10;
 
-    const HEADER_SEP = "1px solid rgba(128,128,128,0.2)";
+    const HEADER_SEP = "1px solid rgba(128,128,128,0.3)";
     const headerStyle: any = {
       position: "sticky",
       top: stickyTop,
