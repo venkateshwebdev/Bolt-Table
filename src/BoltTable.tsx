@@ -49,15 +49,30 @@ import {
   ColumnsIcon,
   CopyIcon,
   GripVerticalIcon,
+  LoaderIcon,
   PencilIcon,
   PinIcon,
   PinOffIcon,
   SearchIcon,
+  SendIcon,
+  SparklesIcon,
   XIcon,
 } from "./icons";
+import {
+  applyAIOperations,
+  buildSystemPrompt,
+  callAI,
+  getAICellStyle,
+  getAIRowStyle,
+  parseAIResponse,
+} from "./ai";
 import ResizeOverlay, { type ResizeOverlayHandle } from "./ResizeOverlay";
 import TableBody from "./TableBody";
 import type {
+  AICellStyleOperation,
+  AIResponse,
+  AIStyleOperation,
+  BoltTableAIConfig,
   ColumnContextMenuItem,
   ColumnPersistenceConfig,
   ColumnType,
@@ -233,6 +248,27 @@ interface BoltTableProps<T extends DataRecord = DataRecord> {
 
   /** Label for the column-settings button. Defaults to "Columns". */
   readonly columnSettingsLabel?: React.ReactNode;
+
+  /** Enable the AI assistant button in the toolbar. Requires `aiConfig` or `onAIQuery`. */
+  readonly aiMode?: boolean;
+
+  /** AI provider configuration (API key, model, etc.). Used by the built-in AI handler. */
+  readonly aiConfig?: BoltTableAIConfig;
+
+  /** Custom AI query handler. When provided, overrides the built-in AI call. Return an `AIResponse` with operations to apply. */
+  readonly onAIQuery?: (
+    query: string,
+    context: { data: T[]; columns: ColumnType<T>[] },
+  ) => Promise<AIResponse>;
+
+  /** Called after the AI applies operations. Receives the parsed response. */
+  readonly onAIResponse?: (response: AIResponse) => void;
+
+  /** Placeholder text for the AI search bar. */
+  readonly aiPlaceholder?: string;
+
+  /** Label for the AI button. Defaults to "Ask AI". */
+  readonly aiButtonLabel?: React.ReactNode;
 }
 
 export interface ClassNamesTypes {
@@ -387,6 +423,12 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   onGlobalSearchChange,
   toolbarContent,
   columnSettingsLabel,
+  aiMode = false,
+  aiConfig,
+  onAIQuery,
+  onAIResponse,
+  aiPlaceholder = "Ask AI anything about your data...",
+  aiButtonLabel,
 }: BoltTableProps<T>) {
   const data = useMemo<T[]>(() => {
     if (!Array.isArray(rawData)) return STABLE_EMPTY_DATA as T[];
@@ -606,6 +648,113 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
       document.removeEventListener("keydown", onKey);
     };
   }, [showColumnPicker]);
+
+  // ── AI Mode state ──────────────────────────────────────────────────────
+  const [aiBarOpen, setAiBarOpen] = useState(false);
+  const [aiQuery, setAiQuery] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiResult, setAiResult] = useState<AIResponse | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const aiInputRef = useRef<HTMLInputElement>(null);
+  const [aiStyleOps, setAiStyleOps] = useState<AIStyleOperation[]>([]);
+  const [aiCellStyleOps, setAiCellStyleOps] = useState<AICellStyleOperation[]>(
+    [],
+  );
+  const [aiFilteredDataKeys, setAiFilteredDataKeys] = useState<Set<string> | null>(null);
+  const [aiSortKey, setAiSortKey] = useState<string | null>(null);
+  const [aiSortDir, setAiSortDir] = useState<"asc" | "desc" | null>(null);
+
+  const onAIResponseRef = useRef(onAIResponse);
+  onAIResponseRef.current = onAIResponse;
+
+  const handleAISubmit = useCallback(async () => {
+    const query = aiQuery.trim();
+    if (!query) return;
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      let response: AIResponse;
+      if (onAIQuery) {
+        response = await onAIQuery(query, {
+          data: data as T[],
+          columns: initialColumns as ColumnType<T>[],
+        });
+      } else if (aiConfig) {
+        const sysPrompt = buildSystemPrompt(initialColumns, data);
+        const raw = await callAI(aiConfig, sysPrompt, query);
+        response = parseAIResponse(raw);
+      } else {
+        throw new Error("AI mode requires either aiConfig or onAIQuery prop");
+      }
+
+      const { filteredData, sortOp, styleOps: sOps, cellStyleOps: csOps, hideColumns, showColumns } =
+        applyAIOperations(data as DataRecord[], response.operations);
+
+      setAiStyleOps(sOps);
+      setAiCellStyleOps(csOps);
+
+      if (response.operations.some((op) => op.type === "filter")) {
+        const keySet = new Set<string>();
+        filteredData.forEach((row, idx) => {
+          const k =
+            typeof rowKey === "function"
+              ? (rowKey as (r: T) => string)(row as T)
+              : String((row as DataRecord)[typeof rowKey === "string" ? rowKey : "id"] ?? idx);
+          keySet.add(k);
+        });
+        setAiFilteredDataKeys(keySet);
+      } else {
+        setAiFilteredDataKeys(null);
+      }
+
+      if (sortOp) {
+        setAiSortKey(sortOp.column);
+        setAiSortDir(sortOp.direction);
+      } else {
+        setAiSortKey(null);
+        setAiSortDir(null);
+      }
+
+      if (hideColumns.length > 0 || showColumns.length > 0) {
+        setColumns((prev) =>
+          prev.map((col) => {
+            if (hideColumns.includes(col.key)) return { ...col, hidden: true };
+            if (showColumns.includes(col.key)) return { ...col, hidden: false };
+            return col;
+          }),
+        );
+      }
+
+      setAiResult(response);
+      onAIResponseRef.current?.(response);
+    } catch (err: unknown) {
+      setAiError(err instanceof Error ? err.message : "AI query failed");
+    } finally {
+      setAiLoading(false);
+    }
+  }, [aiQuery, aiConfig, onAIQuery, data, initialColumns, rowKey]);
+
+  const handleAIClear = useCallback(() => {
+    setAiResult(null);
+    setAiError(null);
+    setAiStyleOps([]);
+    setAiCellStyleOps([]);
+    setAiFilteredDataKeys(null);
+    setAiSortKey(null);
+    setAiSortDir(null);
+    setAiQuery("");
+  }, []);
+
+  const handleAIBarClose = useCallback(() => {
+    setAiBarOpen(false);
+    handleAIClear();
+  }, [handleAIClear]);
+
+  React.useEffect(() => {
+    if (aiBarOpen && aiInputRef.current) {
+      setTimeout(() => aiInputRef.current?.focus(), 300);
+    }
+  }, [aiBarOpen]);
 
   const columnsWithPersistedWidths = useMemo(
     () =>
@@ -1420,6 +1569,59 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     return result;
   }, [data, sortState, columnFilters, globalSearchValue, internalGlobalSearch]);
 
+  // ── AI post-processing layer ───────────────────────────────────────────
+  const aiProcessedData = useMemo(() => {
+    let result = processedData;
+
+    if (aiFilteredDataKeys) {
+      result = result.filter((row, idx) => {
+        if (row == null) return false;
+        const k =
+          typeof rowKey === "function"
+            ? (rowKey as (r: T) => string)(row)
+            : String(
+                (row as DataRecord)[
+                  typeof rowKey === "string" ? rowKey : "id"
+                ] ?? idx,
+              );
+        return aiFilteredDataKeys.has(k);
+      });
+    }
+
+    if (aiSortKey && aiSortDir) {
+      const dir = aiSortDir === "asc" ? 1 : -1;
+      const col = aiSortKey;
+      result = [...result].sort((a, b) => {
+        const aVal = (a as DataRecord)[col];
+        const bVal = (b as DataRecord)[col];
+        if (aVal == null && bVal == null) return 0;
+        if (aVal == null) return 1;
+        if (bVal == null) return -1;
+        if (typeof aVal === "number" && typeof bVal === "number")
+          return (aVal - bVal) * dir;
+        return String(aVal).localeCompare(String(bVal)) * dir;
+      });
+    }
+
+    return result;
+  }, [processedData, aiFilteredDataKeys, aiSortKey, aiSortDir, rowKey]);
+
+  const getAIRowStyleForRecord = useCallback(
+    (record: T): React.CSSProperties | undefined => {
+      if (aiStyleOps.length === 0) return undefined;
+      return getAIRowStyle(record as DataRecord, aiStyleOps);
+    },
+    [aiStyleOps],
+  );
+
+  const getAICellStyleForRecord = useCallback(
+    (record: T, columnKey: string): React.CSSProperties | undefined => {
+      if (aiCellStyleOps.length === 0) return undefined;
+      return getAICellStyle(record as DataRecord, columnKey, aiCellStyleOps);
+    },
+    [aiCellStyleOps],
+  );
+
   const pinnedRowCacheRef = useRef<Map<string, T>>(new Map());
 
   const { pinnedTopRows, pinnedBottomRows, unpinnedProcessedData } =
@@ -1432,7 +1634,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
         return {
           pinnedTopRows: [] as T[],
           pinnedBottomRows: [] as T[],
-          unpinnedProcessedData: processedData,
+          unpinnedProcessedData: aiProcessedData,
         };
       }
 
@@ -1445,7 +1647,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
       const bottomMap = new Map<string, T>();
       const rest: T[] = [];
 
-      processedData.forEach((row, idx) => {
+      aiProcessedData.forEach((row, idx) => {
         if (row == null) return;
         const key = getSafeRowKey(row as T, idx);
         if (topKeySet.has(key)) {
@@ -1493,7 +1695,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
         unpinnedProcessedData: rest,
       };
     }, [
-      processedData,
+      aiProcessedData,
       resolvedRowPinning,
       getSafeRowKey,
       keepPinnedRowsAcrossPages,
@@ -1600,7 +1802,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   }, [unpinnedProcessedData, needsClientPagination, pgCurrent, pgSize]);
 
   const shimmerCount = pgEnabled ? pgSize : 15;
-  const showShimmer = isLoading && processedData.length === 0;
+  const showShimmer = isLoading && aiProcessedData.length === 0;
   const shimmerRowKeyField = typeof rowKey === "string" ? rowKey : "id";
   const shimmerData = useMemo(() => {
     if (!showShimmer) return null;
@@ -1956,12 +2158,18 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
             border: 1px dashed ${accentColor} !important;
           }
           ${onRowClick ? "[data-bt-cell] { cursor: pointer; }" : ""}
+          @keyframes bt-spin { to { transform: rotate(360deg); } }
+          @keyframes bt-ai-shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+          }
         `}</style>
 
-        {/* Toolbar: Global Search + Column Picker */}
-        {(!hideGlobalSearch || showColumnSettings) && (
+        {/* Toolbar: Global Search + Column Picker + AI */}
+        {(!hideGlobalSearch || showColumnSettings || aiMode) && (
           <div
             style={{
+              position: "relative",
               display: "flex",
               alignItems: "center",
               gap: 8,
@@ -1969,34 +2177,270 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
               borderBottom: "1px solid rgba(128,128,128,0.2)",
               fontSize: 12,
               flexShrink: 0,
+              overflow: "hidden",
             }}
           >
-            {!hideGlobalSearch && (
+            {/* ── Normal toolbar items ── */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                flex: "1 1 0%",
+                opacity: aiBarOpen ? 0 : 1,
+                transform: aiBarOpen ? "scale(0.97)" : "scale(1)",
+                transition: "opacity 0.25s ease, transform 0.25s ease",
+                pointerEvents: aiBarOpen ? "none" : "auto",
+                minWidth: 0,
+              }}
+            >
+              {!hideGlobalSearch && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    flex: "1 1 0%",
+                    position: "relative",
+                  }}
+                >
+                  <span
+                    style={{
+                      display: "flex",
+                      color: "GrayText",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {icons?.search ?? (
+                      <SearchIcon style={{ width: 14, height: 14 }} />
+                    )}
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Search all columns..."
+                    value={globalSearchValue ?? internalGlobalSearch}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (onGlobalSearchChange) onGlobalSearchChange(v);
+                      else setInternalGlobalSearch(v);
+                    }}
+                    style={{
+                      flex: "1 1 0%",
+                      border: "none",
+                      outline: "none",
+                      background: "transparent",
+                      font: "inherit",
+                      color: "inherit",
+                      padding: "4px 6px",
+                      minWidth: 0,
+                    }}
+                  />
+                  {(globalSearchValue ?? internalGlobalSearch) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (onGlobalSearchChange) onGlobalSearchChange("");
+                        else setInternalGlobalSearch("");
+                      }}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        padding: 2,
+                        color: "GrayText",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {icons?.close ?? (
+                        <XIcon style={{ width: 12, height: 12 }} />
+                      )}
+                    </button>
+                  )}
+                </div>
+              )}
+              {toolbarContent}
+              {showColumnSettings && (
+                <div style={{ position: "relative", flexShrink: 0 }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowColumnPicker((p) => !p)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      background: "none",
+                      border: "1px solid rgba(128,128,128,0.2)",
+                      borderRadius: 4,
+                      cursor: "pointer",
+                      padding: "4px 6px",
+                      color: "inherit",
+                      gap: 4,
+                      fontSize: 12,
+                    }}
+                    title="Column settings"
+                  >
+                    {icons?.columns ?? (
+                      <ColumnsIcon style={{ width: 14, height: 14 }} />
+                    )}
+                    <span>{columnSettingsLabel ?? "Columns"}</span>
+                  </button>
+                  {showColumnPicker && (
+                    <div
+                      ref={columnPickerRef}
+                      style={{
+                        position: "absolute",
+                        top: "100%",
+                        right: 0,
+                        zIndex: 99999,
+                        minWidth: 200,
+                        maxHeight: 320,
+                        overflowY: "auto",
+                        borderRadius: 8,
+                        border: "1px solid rgba(128,128,128,0.2)",
+                        boxShadow: "0 4px 24px rgba(0,0,0,0.12)",
+                        backdropFilter: "blur(16px)",
+                        WebkitBackdropFilter: "blur(16px)",
+                        backgroundColor: "rgba(128,128,128,0.08)",
+                        padding: "4px 0",
+                        marginTop: 4,
+                      }}
+                    >
+                      {initialColumns
+                        .filter(
+                          (c) =>
+                            c.key !== "__select__" && c.key !== "__expand__",
+                        )
+                        .map((col) => {
+                          const current = columns.find(
+                            (c) => c.key === col.key,
+                          );
+                          const isHidden = current?.hidden ?? false;
+                          const isPinned = !!current?.pinned;
+                          return (
+                            <label
+                              key={col.key}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                                padding: "6px 12px",
+                                cursor: isPinned ? "not-allowed" : "pointer",
+                                opacity: isPinned ? 0.5 : 1,
+                                fontSize: 12,
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={!isHidden}
+                                disabled={isPinned}
+                                onChange={() => {
+                                  if (isPinned) return;
+                                  handleToggleHide(col.key);
+                                }}
+                                style={{
+                                  cursor: isPinned
+                                    ? "not-allowed"
+                                    : "pointer",
+                                  accentColor,
+                                }}
+                              />
+                              <span
+                                style={{
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {typeof col.title === "string"
+                                  ? col.title
+                                  : col.key}
+                              </span>
+                            </label>
+                          );
+                        })}
+                    </div>
+                  )}
+                </div>
+              )}
+              {/* ── Ask AI button ── */}
+              {aiMode && (
+                <button
+                  type="button"
+                  onClick={() => setAiBarOpen(true)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 4,
+                    background: `linear-gradient(135deg, ${accentColor}18, ${accentColor}08)`,
+                    border: `1px solid ${accentColor}40`,
+                    borderRadius: 4,
+                    cursor: "pointer",
+                    padding: "4px 8px",
+                    color: accentColor,
+                    fontSize: 12,
+                    fontWeight: 500,
+                    flexShrink: 0,
+                    transition: "all 0.2s ease",
+                  }}
+                  title="Ask AI"
+                >
+                  {icons?.sparkles ?? (
+                    <SparklesIcon style={{ width: 14, height: 14 }} />
+                  )}
+                  <span>{aiButtonLabel ?? "Ask AI"}</span>
+                </button>
+              )}
+            </div>
+
+            {/* ── AI search bar overlay ── */}
+            {aiMode && (
               <div
                 style={{
+                  position: "absolute",
+                  inset: 0,
                   display: "flex",
                   alignItems: "center",
-                  gap: 4,
-                  flex: "1 1 0%",
-                  position: "relative",
+                  gap: 8,
+                  padding: "4px 8px",
+                  opacity: aiBarOpen ? 1 : 0,
+                  transform: aiBarOpen
+                    ? "translateX(0)"
+                    : "translateX(40px)",
+                  transition:
+                    "opacity 0.3s cubic-bezier(0.4,0,0.2,1), transform 0.3s cubic-bezier(0.4,0,0.2,1)",
+                  pointerEvents: aiBarOpen ? "auto" : "none",
+                  zIndex: 2,
+                  background: "inherit",
+                  backdropFilter: "blur(12px)",
+                  WebkitBackdropFilter: "blur(12px)",
                 }}
               >
                 <span
-                  style={{ display: "flex", color: "GrayText", flexShrink: 0 }}
+                  style={{
+                    display: "flex",
+                    color: accentColor,
+                    flexShrink: 0,
+                  }}
                 >
-                  {icons?.search ?? (
-                    <SearchIcon style={{ width: 14, height: 14 }} />
+                  {icons?.sparkles ?? (
+                    <SparklesIcon style={{ width: 16, height: 16 }} />
                   )}
                 </span>
                 <input
+                  ref={aiInputRef}
                   type="text"
-                  placeholder="Search all columns..."
-                  value={globalSearchValue ?? internalGlobalSearch}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (onGlobalSearchChange) onGlobalSearchChange(v);
-                    else setInternalGlobalSearch(v);
+                  placeholder={aiPlaceholder}
+                  value={aiQuery}
+                  onChange={(e) => setAiQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !aiLoading) handleAISubmit();
+                    if (e.key === "Escape") handleAIBarClose();
                   }}
+                  disabled={aiLoading}
                   style={{
                     flex: "1 1 0%",
                     border: "none",
@@ -2006,133 +2450,167 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                     color: "inherit",
                     padding: "4px 6px",
                     minWidth: 0,
+                    fontSize: 12,
                   }}
                 />
-                {(globalSearchValue ?? internalGlobalSearch) && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (onGlobalSearchChange) onGlobalSearchChange("");
-                      else setInternalGlobalSearch("");
-                    }}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      padding: 2,
-                      color: "GrayText",
-                      flexShrink: 0,
-                    }}
-                  >
-                    {icons?.close ?? (
-                      <XIcon style={{ width: 12, height: 12 }} />
-                    )}
-                  </button>
-                )}
-              </div>
-            )}
-            {toolbarContent}
-            {showColumnSettings && (
-              <div style={{ position: "relative", flexShrink: 0 }}>
+                {/* Send / Loading button */}
                 <button
                   type="button"
-                  onClick={() => setShowColumnPicker((p) => !p)}
+                  onClick={handleAISubmit}
+                  disabled={aiLoading || !aiQuery.trim()}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: aiQuery.trim()
+                      ? accentColor
+                      : "rgba(128,128,128,0.15)",
+                    border: "none",
+                    borderRadius: 4,
+                    cursor:
+                      aiLoading || !aiQuery.trim()
+                        ? "not-allowed"
+                        : "pointer",
+                    padding: "4px 8px",
+                    color: aiQuery.trim() ? "#fff" : "GrayText",
+                    transition: "all 0.2s ease",
+                    flexShrink: 0,
+                    gap: 4,
+                    fontSize: 12,
+                    opacity: aiLoading ? 0.7 : 1,
+                  }}
+                  title="Send"
+                >
+                  {aiLoading ? (
+                    <>
+                      {icons?.loader ?? (
+                        <LoaderIcon
+                          style={{
+                            width: 14,
+                            height: 14,
+                            animation: "bt-spin 1s linear infinite",
+                          }}
+                        />
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      {icons?.send ?? (
+                        <SendIcon style={{ width: 14, height: 14 }} />
+                      )}
+                    </>
+                  )}
+                </button>
+                {/* Close AI bar */}
+                <button
+                  type="button"
+                  onClick={handleAIBarClose}
                   style={{
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
                     background: "none",
-                    border: "1px solid rgba(128,128,128,0.2)",
-                    borderRadius: 4,
+                    border: "none",
                     cursor: "pointer",
-                    padding: "4px 6px",
-                    color: "inherit",
-                    gap: 4,
-                    fontSize: 12,
+                    padding: 2,
+                    color: "GrayText",
+                    flexShrink: 0,
                   }}
-                  title="Column settings"
+                  title="Close AI"
                 >
-                  {icons?.columns ?? (
-                    <ColumnsIcon style={{ width: 14, height: 14 }} />
+                  {icons?.close ?? (
+                    <XIcon style={{ width: 14, height: 14 }} />
                   )}
-                  <span>{columnSettingsLabel ?? "Columns"}</span>
                 </button>
-                {showColumnPicker && (
-                  <div
-                    ref={columnPickerRef}
-                    style={{
-                      position: "absolute",
-                      top: "100%",
-                      right: 0,
-                      zIndex: 99999,
-                      minWidth: 200,
-                      maxHeight: 320,
-                      overflowY: "auto",
-                      borderRadius: 8,
-                      border: "1px solid rgba(128,128,128,0.2)",
-                      boxShadow: "0 4px 24px rgba(0,0,0,0.12)",
-                      backdropFilter: "blur(16px)",
-                      WebkitBackdropFilter: "blur(16px)",
-                      backgroundColor: "rgba(128,128,128,0.08)",
-                      padding: "4px 0",
-                      marginTop: 4,
-                    }}
-                  >
-                    {initialColumns
-                      .filter(
-                        (c) => c.key !== "__select__" && c.key !== "__expand__",
-                      )
-                      .map((col) => {
-                        const current = columns.find((c) => c.key === col.key);
-                        const isHidden = current?.hidden ?? false;
-                        const isPinned = !!current?.pinned;
-                        return (
-                          <label
-                            key={col.key}
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 8,
-                              padding: "6px 12px",
-                              cursor: isPinned ? "not-allowed" : "pointer",
-                              opacity: isPinned ? 0.5 : 1,
-                              fontSize: 12,
-                            }}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={!isHidden}
-                              disabled={isPinned}
-                              onChange={() => {
-                                if (isPinned) return;
-                                handleToggleHide(col.key);
-                              }}
-                              style={{
-                                cursor: isPinned ? "not-allowed" : "pointer",
-                                accentColor,
-                              }}
-                            />
-                            <span
-                              style={{
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              {typeof col.title === "string"
-                                ? col.title
-                                : col.key}
-                            </span>
-                          </label>
-                        );
-                      })}
-                  </div>
-                )}
               </div>
             )}
+          </div>
+        )}
+
+        {/* ── AI result banner ── */}
+        {aiResult && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "6px 12px",
+              fontSize: 12,
+              borderBottom: "1px solid rgba(128,128,128,0.2)",
+              background: `linear-gradient(90deg, ${accentColor}08, transparent)`,
+              flexShrink: 0,
+            }}
+          >
+            <span style={{ color: accentColor, display: "flex", flexShrink: 0 }}>
+              {icons?.sparkles ?? (
+                <SparklesIcon style={{ width: 14, height: 14 }} />
+              )}
+            </span>
+            <span style={{ flex: "1 1 0%", opacity: 0.85 }}>
+              {aiResult.message}
+            </span>
+            <button
+              type="button"
+              onClick={handleAIClear}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                background: "none",
+                border: "1px solid rgba(128,128,128,0.2)",
+                borderRadius: 4,
+                cursor: "pointer",
+                padding: "2px 8px",
+                color: "inherit",
+                fontSize: 11,
+                flexShrink: 0,
+                opacity: 0.7,
+              }}
+              title="Clear AI results"
+            >
+              {icons?.close ?? (
+                <XIcon style={{ width: 10, height: 10 }} />
+              )}
+              <span>Clear</span>
+            </button>
+          </div>
+        )}
+
+        {/* ── AI error banner ── */}
+        {aiError && !aiResult && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "6px 12px",
+              fontSize: 12,
+              borderBottom: "1px solid rgba(239,68,68,0.2)",
+              background: "rgba(239,68,68,0.06)",
+              color: "#ef4444",
+              flexShrink: 0,
+            }}
+          >
+            <span style={{ flex: "1 1 0%" }}>{aiError}</span>
+            <button
+              type="button"
+              onClick={() => setAiError(null)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: 2,
+                color: "#ef4444",
+                flexShrink: 0,
+              }}
+            >
+              {icons?.close ?? (
+                <XIcon style={{ width: 12, height: 12 }} />
+              )}
+            </button>
           </div>
         )}
 
@@ -2719,12 +3197,26 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                         | undefined
                     }
                     rowStyle={
-                      rowStyle as
-                        | ((
-                            record: DataRecord,
-                            index: number,
-                          ) => React.CSSProperties)
-                        | undefined
+                      aiStyleOps.length > 0
+                        ? (record: DataRecord, index: number) => {
+                            const base = rowStyle
+                              ? (
+                                  rowStyle as (
+                                    record: DataRecord,
+                                    index: number,
+                                  ) => React.CSSProperties
+                                )(record, index)
+                              : undefined;
+                            const ai = getAIRowStyleForRecord(record as T);
+                            if (!base && !ai) return {} as React.CSSProperties;
+                            return { ...base, ...ai };
+                          }
+                        : (rowStyle as
+                            | ((
+                                record: DataRecord,
+                                index: number,
+                              ) => React.CSSProperties)
+                            | undefined)
                     }
                     bodyGridRow={hasColumnGroups ? 3 : 2}
                     onEdit={
@@ -2742,6 +3234,12 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                     enableDynamicRowHeight={enableDynamicRowHeight}
                     onRowHeightChange={handleRowHeightChange}
                     columnGridIndexMap={columnGridIndexMap}
+                    cellStyleFn={
+                      aiCellStyleOps.length > 0
+                        ? (record: DataRecord, columnKey: string) =>
+                            getAICellStyleForRecord(record as T, columnKey)
+                        : undefined
+                    }
                   />
                 )}
               </div>

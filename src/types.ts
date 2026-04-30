@@ -270,3 +270,100 @@ export interface ColumnPersistenceConfig {
   /** Persist column pinned state. Defaults to `true`. */
   persistPinned?: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// AI Mode Types
+// ---------------------------------------------------------------------------
+
+/** Supported comparison operators for AI-generated conditions. */
+export type AIOperator =
+  | "eq"
+  | "neq"
+  | "gt"
+  | "gte"
+  | "lt"
+  | "lte"
+  | "contains"
+  | "notContains"
+  | "startsWith"
+  | "endsWith"
+  | "in"
+  | "notIn";
+
+/** A single condition produced by the AI. */
+export interface AICondition {
+  column: string;
+  op: AIOperator;
+  value: unknown;
+}
+
+/** Filter rows matching conditions. */
+export interface AIFilterOperation {
+  type: "filter";
+  conditions: AICondition[];
+  logic?: "and" | "or";
+}
+
+/** Apply inline styles to rows matching conditions. */
+export interface AIStyleOperation {
+  type: "rowStyle";
+  conditions: AICondition[];
+  logic?: "and" | "or";
+  style: Record<string, string>;
+}
+
+/** Apply inline styles to specific cells matching conditions. */
+export interface AICellStyleOperation {
+  type: "cellStyle";
+  column: string;
+  conditions: AICondition[];
+  logic?: "and" | "or";
+  style: Record<string, string>;
+}
+
+/** Sort data by a column. */
+export interface AISortOperation {
+  type: "sort";
+  column: string;
+  direction: "asc" | "desc";
+}
+
+/** Hide or show specific columns. */
+export interface AIColumnVisibilityOperation {
+  type: "hideColumns" | "showColumns";
+  columns: string[];
+}
+
+/** Union of all possible AI operations. */
+export type AIOperation =
+  | AIFilterOperation
+  | AIStyleOperation
+  | AICellStyleOperation
+  | AISortOperation
+  | AIColumnVisibilityOperation;
+
+/** The structured response returned by the AI. */
+export interface AIResponse {
+  operations: AIOperation[];
+  message: string;
+}
+
+/** AI provider configuration. */
+export interface BoltTableAIConfig {
+  provider: "openai" | "anthropic" | "custom";
+  apiKey: string;
+  model?: string;
+  baseUrl?: string;
+  maxTokens?: number;
+  temperature?: number;
+}
+
+/** Top-level configuration for bolt-table.config.ts files. */
+export interface BoltTableConfig {
+  ai?: BoltTableAIConfig;
+}
+
+/** Helper for type-safe bolt-table.config.ts files. */
+export function defineConfig(config: BoltTableConfig): BoltTableConfig {
+  return config;
+}

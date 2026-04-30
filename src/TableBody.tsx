@@ -121,6 +121,12 @@ interface TableBodyProps {
 
   /** Maps column key → 1-based CSS grid column index in the full (non-virtualized) grid. Required for correct placement when column virtualization is enabled. */
   columnGridIndexMap?: Map<string, number>;
+
+  /** Optional AI cell style function. Returns extra styles for a specific cell. */
+  cellStyleFn?: (
+    record: DataRecord,
+    columnKey: string,
+  ) => React.CSSProperties | undefined;
 }
 
 const SHIMMER_WIDTHS = [55, 70, 45, 80, 60, 50, 75, 65];
@@ -151,6 +157,10 @@ interface CellProps {
   ) => void;
   isEditing?: boolean;
   onEditComplete?: () => void;
+  cellStyleFn?: (
+    record: DataRecord,
+    columnKey: string,
+  ) => React.CSSProperties | undefined;
 }
 
 const EditableCell = ({
@@ -254,8 +264,10 @@ const Cell = React.memo(
     onEdit,
     isEditing,
     onEditComplete,
+    cellStyleFn,
   }: CellProps) => {
     const isPinned = Boolean(column.pinned);
+    const extraCellStyle = cellStyleFn?.(record, column.dataIndex ?? column.key);
     if (
       isLoading &&
       column.key !== "__select__" &&
@@ -426,6 +438,7 @@ const Cell = React.memo(
           ...column.style,
           ...(isPinned ? styles?.pinnedCell : undefined),
           ...styles?.cell,
+          ...extraCellStyle,
         }}
       >
         {isSystem ? (
@@ -457,6 +470,7 @@ const Cell = React.memo(
     if (prev.onEdit !== next.onEdit) return false;
     if (prev.isEditing !== next.isEditing) return false;
     if (prev.onEditComplete !== next.onEditComplete) return false;
+    if (prev.cellStyleFn !== next.cellStyleFn) return false;
     if (prev.column.key === "__select__") {
       return (
         prev.isSelected === next.isSelected &&
@@ -584,6 +598,7 @@ const TableBody: React.FC<TableBodyProps> = ({
   enableDynamicRowHeight = false,
   onRowHeightChange,
   columnGridIndexMap,
+  cellStyleFn,
 }) => {
   const virtualItems = rowVirtualizer.getVirtualItems();
   const totalSize = rowVirtualizer.getTotalSize();
@@ -744,6 +759,7 @@ const TableBody: React.FC<TableBodyProps> = ({
                             editingCell?.columnKey === col.key
                           }
                           onEditComplete={onEditComplete}
+                          cellStyleFn={cellStyleFn}
                         />
                       </div>
                     </DynamicRowMeasurer>
@@ -784,6 +800,7 @@ const TableBody: React.FC<TableBodyProps> = ({
                           editingCell?.columnKey === col.key
                         }
                         onEditComplete={onEditComplete}
+                        cellStyleFn={cellStyleFn}
                       />
                     </div>
                   )}
@@ -1008,6 +1025,7 @@ const TableBody: React.FC<TableBodyProps> = ({
                               editingCell?.columnKey === col.key
                             }
                             onEditComplete={onEditComplete}
+                            cellStyleFn={cellStyleFn}
                           />
                         </div>
                       </div>
@@ -1153,6 +1171,7 @@ const TableBody: React.FC<TableBodyProps> = ({
                               editingCell?.columnKey === col.key
                             }
                             onEditComplete={onEditComplete}
+                            cellStyleFn={cellStyleFn}
                           />
                         </div>
                       </div>

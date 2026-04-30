@@ -14,5 +14,18 @@ export type {
   DataRecord,
   RowPinningConfig,
   ColumnPersistenceConfig,
+  // AI types
+  AIOperator,
+  AICondition,
+  AIFilterOperation,
+  AIStyleOperation,
+  AICellStyleOperation,
+  AISortOperation,
+  AIColumnVisibilityOperation,
+  AIOperation,
+  AIResponse,
+  BoltTableAIConfig,
+  BoltTableConfig,
 } from "./types";
+export { defineConfig } from "./types";
 export type { BoltTableIcons } from "./icons";
