@@ -181,6 +181,14 @@ Available icon keys: `gripVertical`, `sortAsc`, `sortDesc`, `filter`, `filterCle
 | `hideGlobalSearch` | `boolean` | `false` | Hide the global search input above the table |
 | `globalSearchValue` | `string` | — | Controlled global search value |
 | `onGlobalSearchChange` | `(value: string) => void` | — | Called when the global search input changes |
+| `rowDragEnabled` | `boolean` | `false` | Show a drag grip handle on each row for drag-and-drop reordering |
+| `onRowReorder` | `(fromIndex, toIndex) => void` | — | Called when the user drops a row into a new position |
+| `aiMode` | `boolean` | `false` | Enable the AI assistant button in the toolbar |
+| `aiConfig` | `BoltTableAIConfig` | — | AI provider configuration (API key, model, etc.) |
+| `onAIQuery` | `(query, context) => Promise<AIResponse>` | — | Custom AI query handler (overrides built-in AI) |
+| `onAIResponse` | `(response: AIResponse) => void` | — | Called after AI applies operations |
+| `aiPlaceholder` | `string` | `"Ask AI anything..."` | Placeholder text for the AI search bar |
+| `aiButtonLabel` | `ReactNode` | `"Ask AI"` | Label for the AI button |
 
 ---
 
@@ -749,6 +757,145 @@ By default, BoltTable auto-sizes to its content. To fill a fixed-height containe
 </div>
 ```
 
+### Row drag-and-drop reordering
+
+Enable row reordering with a drag grip handle on each row. Users can drag rows to new positions.
+
+```tsx
+const [data, setData] = useState<User[]>(initialData);
+
+<BoltTable
+  columns={columns}
+  data={data}
+  rowKey="id"
+  rowDragEnabled
+  onRowReorder={(fromIndex, toIndex) => {
+    setData(prev => {
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
+  }}
+/>
+```
+
+A grip icon appears as a pinned column on the left. Drag a row by its grip handle and drop it onto another row — the blue indicator line shows where it will land.
+
+> **Note:** `onRowReorder` receives the indices within the current page's visible data. If you use server-side pagination, map these back to your full dataset accordingly.
+
+---
+
+### Column auto-fit width
+
+Double-click the resize handle (right edge) of any column header to automatically fit the column width to its content. The table measures the header title and all visible cell content, then sets the optimal width (clamped between 60px and 800px).
+
+```tsx
+// No extra configuration needed — auto-fit is built into every column's resize handle.
+// Just double-click the right edge of any header.
+
+<BoltTable columns={columns} data={data} />
+```
+
+You still get notified via `onColumnResize` when an auto-fit happens:
+
+```tsx
+<BoltTable
+  columns={columns}
+  data={data}
+  onColumnResize={(columnKey, newWidth) => {
+    console.log(`Column ${columnKey} auto-fitted to ${newWidth}px`);
+  }}
+/>
+```
+
+---
+
+### AI mode
+
+Enable the AI assistant to let users interact with the table using natural language. The AI can filter, sort, style, resize, reorder, pin columns, and navigate pages.
+
+```tsx
+<BoltTable
+  columns={columns}
+  data={data}
+  rowKey="id"
+  aiMode
+  aiConfig={{
+    provider: 'openai',        // 'openai' | 'anthropic' | 'custom'
+    apiKey: 'sk-...',
+    model: 'gpt-4o-mini',     // optional, defaults vary by provider
+  }}
+  onAIResponse={(response) => {
+    console.log('AI applied:', response.message);
+  }}
+/>
+```
+
+**Custom AI handler** (bring your own backend):
+
+```tsx
+<BoltTable
+  columns={columns}
+  data={data}
+  aiMode
+  onAIQuery={async (query, { data, columns }) => {
+    const res = await fetch('/api/table-ai', {
+      method: 'POST',
+      body: JSON.stringify({ query, schema: columns.map(c => c.key) }),
+    });
+    return res.json(); // must return { operations: [...], message: "..." }
+  }}
+/>
+```
+
+**Saved filters** — when AI answers a query, a "Save Filter" button appears. Clicking it saves the operations to localStorage. Saved filters can be re-applied instantly with zero AI calls. The saved filters dropdown appears automatically when you have saved filters.
+
+```tsx
+// Saved filters are stored automatically using the columnPersistence storageKey.
+// To enable saved filters, just use aiMode with columnPersistence:
+<BoltTable
+  columns={columns}
+  data={data}
+  aiMode
+  aiConfig={{ provider: 'openai', apiKey: 'sk-...' }}
+  columnPersistence={{ storageKey: 'my-table' }}
+/>
+```
+
+---
+
+### Safe row keys (NaN / undefined / duplicates)
+
+BoltTable handles edge cases in row keys automatically. If your `rowKey` field contains `undefined`, `null`, `NaN`, or empty strings, the table falls back to index-based keys instead of producing broken or colliding keys.
+
+```tsx
+// All of these work correctly — no crashes, no duplicate key warnings:
+
+// Missing id field
+<BoltTable data={[{ name: 'Alice' }, { name: 'Bob' }]} rowKey="id" columns={columns} />
+
+// NaN values
+<BoltTable data={[{ id: NaN, name: 'Alice' }]} rowKey="id" columns={columns} />
+
+// Duplicate ids — automatically deduplicated
+<BoltTable
+  data={[
+    { id: 1, name: 'Alice' },
+    { id: 1, name: 'Alice (copy)' },
+  ]}
+  rowKey="id"
+  columns={columns}
+/>
+
+// rowKey function that might return undefined
+<BoltTable
+  data={data}
+  rowKey={(record) => record.uuid} // safe even if uuid is undefined
+  columns={columns}
+/>
+```
+
 ---
 
 ## Documentation
@@ -771,6 +918,11 @@ import type {
   SortDirection,
   DataRecord,
   BoltTableIcons,
+  // AI types
+  AIResponse,
+  AIOperation,
+  BoltTableAIConfig,
+  BoltTableConfig,
 } from 'bolt-table';
 ```
 
@@ -779,16 +931,6 @@ import type {
 ## License
 
 MIT © [Venkatesh Sirigineedi](https://github.com/venkateshwebdev)
-
-
-[![npm version](https://img.shields.io/npm/v/bolt-table)](https://www.npmjs.com/package/bolt-table)
-[![license](https://img.shields.io/npm/l/bolt-table)](./LICENSE)
-[![github](https://img.shields.io/badge/GitHub-Source-181717?logo=github)](https://github.com/venkateshwebdev/Bolt-Table)
-[![website](https://img.shields.io/badge/Website-Live_Demo-blue?logo=vercel)](https://bolt-table.vercel.app/)
-
----
-
-## Features
 
 - **Row virtualization** — only visible rows are rendered, powered by TanStack Virtual
 - **Drag to reorder columns** — custom zero-dependency drag-and-drop (no @dnd-kit needed)
