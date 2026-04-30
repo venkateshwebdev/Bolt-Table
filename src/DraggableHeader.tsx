@@ -73,6 +73,8 @@ interface DraggableHeaderProps {
   stickyTop?: number;
   /** When true, removes the left border (for the first visible column). */
   isFirstColumn?: boolean;
+  /** Called when the user double-clicks the resize handle to auto-fit column width. */
+  onAutoFitColumn?: (columnKey: string) => void;
 }
 
 function isColumnSortable(col: ColumnType<DataRecord>): boolean {
@@ -110,6 +112,7 @@ const DraggableHeader = React.memo(
     headerHeight = 36,
     stickyTop = 0,
     isFirstColumn = false,
+    onAutoFitColumn,
   }: DraggableHeaderProps) => {
     const effectivelySortable = isColumnSortable(column);
     const effectivelyFilterable = !disabledFilters && isColumnFilterable(column);
@@ -191,6 +194,13 @@ const DraggableHeader = React.memo(
       e.stopPropagation();
       if (column.pinned) return;
       onResizeStart?.(column.key, e);
+    };
+
+    const handleResizeDoubleClick = (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (column.pinned) return;
+      onAutoFitColumn?.(column.key);
     };
 
     const columnWidth = column.width ?? 150;
@@ -366,7 +376,8 @@ const DraggableHeader = React.memo(
                 padding: 0,
               }}
               onMouseDown={handleResizeStart}
-              aria-label={`Resize ${column.key} column`}
+              onDoubleClick={handleResizeDoubleClick}
+              aria-label={`Resize ${column.key} column (double-click to auto-fit)`}
             >
               <div
                 data-bt-resize-line=""

@@ -127,6 +127,9 @@ interface TableBodyProps {
     record: DataRecord,
     columnKey: string,
   ) => React.CSSProperties | undefined;
+
+  /** Called when the user starts dragging a row by its grip handle. */
+  onRowDragStart?: (rowIndex: number, e: React.PointerEvent) => void;
 }
 
 const SHIMMER_WIDTHS = [55, 70, 45, 80, 60, 50, 75, 65];
@@ -599,6 +602,7 @@ const TableBody: React.FC<TableBodyProps> = ({
   onRowHeightChange,
   columnGridIndexMap,
   cellStyleFn,
+  onRowDragStart,
 }) => {
   const virtualItems = rowVirtualizer.getVirtualItems();
   const totalSize = rowVirtualizer.getTotalSize();
@@ -704,6 +708,7 @@ const TableBody: React.FC<TableBodyProps> = ({
                 <div
                   key={`${rowKey}-${col.key}`}
                   data-row-key={rowKey}
+                  data-row-index={virtualRow.index}
                   data-column-key={col.key}
                   data-bt-cell=""
                   data-selected={isSelected || undefined}
@@ -721,7 +726,36 @@ const TableBody: React.FC<TableBodyProps> = ({
                       : undefined,
                   }}
                 >
-                  {enableDynamicRowHeight &&
+                  {col.key === "__drag__" && onRowDragStart ? (
+                    <div
+                      style={{
+                        height: `${rowHeight}px`,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        borderBottom: "1px solid rgba(128,128,128,0.2)",
+                        ...rowSty,
+                      }}
+                    >
+                      <span
+                        data-bt-row-grip=""
+                        onPointerDown={(e) => {
+                          if (e.button !== 0) return;
+                          onRowDragStart(virtualRow.index, e);
+                        }}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          touchAction: "none",
+                          width: "100%",
+                          height: "100%",
+                        }}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/></svg>
+                      </span>
+                    </div>
+                  ) : enableDynamicRowHeight &&
                   onRowHeightChange &&
                   colIndex === 0 ? (
                     <DynamicRowMeasurer

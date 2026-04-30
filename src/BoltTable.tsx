@@ -270,6 +270,12 @@ interface BoltTableProps<T extends DataRecord = DataRecord> {
 
   /** Label for the AI button. Defaults to "Ask AI". */
   readonly aiButtonLabel?: React.ReactNode;
+
+  /** Enable row drag-and-drop reordering. When true, shows a grip handle on each row. Requires `onRowReorder`. */
+  readonly rowDragEnabled?: boolean;
+
+  /** Called when the user drops a row into a new position. Receives the old and new index. */
+  readonly onRowReorder?: (fromIndex: number, toIndex: number) => void;
 }
 
 export interface ClassNamesTypes {
@@ -430,6 +436,8 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   onAIResponse,
   aiPlaceholder = "Ask AI anything about your data...",
   aiButtonLabel,
+  rowDragEnabled = false,
+  onRowReorder,
 }: BoltTableProps<T>) {
   const data = useMemo<T[]>(() => {
     if (!Array.isArray(rawData)) return STABLE_EMPTY_DATA as T[];
@@ -682,6 +690,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   });
 
   const [showSavedFilters, setShowSavedFilters] = useState(false);
+  const [justSavedFilter, setJustSavedFilter] = useState(false);
   const savedFiltersRef = useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
@@ -702,6 +711,8 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     const next = [...savedAIFilters, entry];
     setSavedAIFilters(next);
     try { localStorage.setItem(aiFiltersStorageKey, JSON.stringify(next)); } catch { /* noop */ }
+    setJustSavedFilter(true);
+    setTimeout(() => setJustSavedFilter(false), 1500);
   }, [aiResult, aiQuery, savedAIFilters, aiFiltersStorageKey]);
 
   const removeSavedFilter = useCallback((index: number) => {
@@ -950,17 +961,29 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
 
   const getRowKey = useCallback(
     (record: T, index: number): string => {
-      if (record == null) return String(index);
+      if (record == null) return `__row_${index}`;
       try {
-        if (typeof rowKey === "function") return String(rowKey(record));
+        if (typeof rowKey === "function") {
+          const result = rowKey(record);
+          const str = String(result);
+          if (str === "undefined" || str === "null" || str === "NaN" || str === "") {
+            return `__row_${index}`;
+          }
+          return str;
+        }
         if (typeof rowKey === "string") {
           const val = record[rowKey];
-          return val != null ? String(val) : String(index);
+          if (val == null) return `__row_${index}`;
+          const str = String(val);
+          if (str === "undefined" || str === "null" || str === "NaN" || str === "") {
+            return `__row_${index}`;
+          }
+          return str;
         }
       } catch {
-        return String(index);
+        return `__row_${index}`;
       }
-      return String(index);
+      return `__row_${index}`;
     },
     [rowKey],
   );
@@ -1000,11 +1023,20 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     (record: T, index: number): React.Key => {
       if (record == null) return index;
       try {
-        if (typeof rowKey === "function") return rowKey(record);
+        if (typeof rowKey === "function") {
+          const result = rowKey(record);
+          if (result == null || (typeof result === "number" && Number.isNaN(result))) return index;
+          const str = String(result);
+          if (str === "undefined" || str === "null" || str === "NaN" || str === "") return index;
+          return result;
+        }
         if (typeof rowKey === "string") {
           const val = record[rowKey];
+          if (val == null || (typeof val === "number" && Number.isNaN(val))) return index;
+          const str = String(val);
+          if (str === "undefined" || str === "null" || str === "NaN" || str === "") return index;
           if (typeof val === "number" || typeof val === "string") return val;
-          return val != null ? String(val) : index;
+          return str;
         }
       } catch {
         return index;
@@ -1114,6 +1146,22 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     return [selectionColumn, ...columnsWithExpand];
   }, [rowSelection, columnsWithExpand]);
 
+  const columnsWithDrag = useMemo(() => {
+    if (!rowDragEnabled || !onRowReorder) return columnsWithSelection;
+
+    const dragColumn: ColumnType<T> = {
+      key: "__drag__",
+      dataIndex: "__drag__",
+      title: "",
+      width: 36,
+      pinned: "left",
+      hidden: false,
+      render: () => null,
+    };
+
+    return [dragColumn, ...columnsWithSelection];
+  }, [rowDragEnabled, onRowReorder, columnsWithSelection]);
+
   const resizeOverlayRef = useRef<ResizeOverlayHandle>(null);
   const tableAreaRef = useRef<HTMLDivElement>(null);
   const [scrollAreaWidth, setScrollAreaWidth] = useState<number>(0);
@@ -1219,7 +1267,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
 
   const handleColumnDragStart = useCallback(
     (columnKey: string, e: React.PointerEvent) => {
-      if (columnKey === "__select__" || columnKey === "__expand__") return;
+      if (columnKey === "__select__" || columnKey === "__expand__" || columnKey === "__drag__") return;
       const headerEl = (e.currentTarget as HTMLElement).closest<HTMLElement>(
         "[data-column-key]",
       );
@@ -1264,6 +1312,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
             !key ||
             key === "__select__" ||
             key === "__expand__" ||
+            key === "__drag__" ||
             key === columnKey
           ) {
             h.removeAttribute("data-drag-over");
@@ -1336,18 +1385,118 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     [],
   );
 
+  // ── Row drag-and-drop reordering ─────────────────────────────────────
+  const rowDragGhostRef = useRef<HTMLDivElement | null>(null);
+  const rowDragFromRef = useRef<number | null>(null);
+  const rowDragOverRef = useRef<number | null>(null);
+  const onRowReorderRef = useRef(onRowReorder);
+  onRowReorderRef.current = onRowReorder;
+
+  const handleRowDragStart = useCallback(
+    (rowIndex: number, e: React.PointerEvent) => {
+      if (!onRowReorderRef.current) return;
+      e.preventDefault();
+
+      rowDragFromRef.current = rowIndex;
+      rowDragOverRef.current = null;
+
+      const target = (e.currentTarget as HTMLElement).closest<HTMLElement>("[data-row-key]");
+      const rowHeight = target?.offsetHeight ?? 40;
+
+      const ghost = rowDragGhostRef.current;
+      if (ghost) {
+        ghost.textContent = `Row ${rowIndex + 1}`;
+        ghost.style.display = "flex";
+        ghost.style.left = `${e.clientX + 12}px`;
+        ghost.style.top = `${e.clientY - 12}px`;
+        ghost.style.height = `${Math.min(rowHeight, 36)}px`;
+      }
+
+      const grabStyle = document.createElement("style");
+      grabStyle.textContent = "* { cursor: grabbing !important; }";
+      document.head.appendChild(grabStyle);
+
+      const scrollEl = tableAreaRef.current;
+
+      const onMove = (ev: PointerEvent) => {
+        if (ghost) {
+          ghost.style.left = `${ev.clientX + 12}px`;
+          ghost.style.top = `${ev.clientY - 12}px`;
+        }
+        if (!scrollEl) return;
+
+        const cells = scrollEl.querySelectorAll<HTMLElement>("[data-bt-cell][data-row-key]");
+        let closestIdx: number | null = null;
+        let closestDist = Infinity;
+
+        cells.forEach((cell) => {
+          const rk = cell.dataset.rowKey;
+          if (!rk) return;
+          const rect = cell.getBoundingClientRect();
+          const midY = rect.top + rect.height / 2;
+          const dist = Math.abs(ev.clientY - midY);
+          if (dist < closestDist) {
+            closestDist = dist;
+            const idxAttr = cell.dataset.rowIndex;
+            if (idxAttr != null) closestIdx = Number(idxAttr);
+          }
+        });
+
+        // Clear all drag-over indicators
+        scrollEl.querySelectorAll<HTMLElement>("[data-row-drag-over]").forEach(
+          (el) => el.removeAttribute("data-row-drag-over"),
+        );
+
+        if (closestIdx != null && closestIdx !== rowDragFromRef.current) {
+          rowDragOverRef.current = closestIdx;
+          scrollEl.querySelectorAll<HTMLElement>(
+            `[data-bt-cell][data-row-index="${closestIdx}"]`,
+          ).forEach((el) => el.setAttribute("data-row-drag-over", ""));
+        } else {
+          rowDragOverRef.current = null;
+        }
+      };
+
+      const onUp = () => {
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        grabStyle.remove();
+        if (ghost) ghost.style.display = "none";
+
+        if (scrollEl) {
+          scrollEl.querySelectorAll<HTMLElement>("[data-row-drag-over]").forEach(
+            (el) => el.removeAttribute("data-row-drag-over"),
+          );
+        }
+
+        const from = rowDragFromRef.current;
+        const to = rowDragOverRef.current;
+        if (from != null && to != null && from !== to) {
+          onRowReorderRef.current?.(from, to);
+        }
+
+        rowDragFromRef.current = null;
+        rowDragOverRef.current = null;
+      };
+
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+    },
+    [],
+  );
+
   const handleResizeStart = (columnKey: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (columnKey === "__select__" || columnKey === "__expand__") return;
+    if (columnKey === "__select__" || columnKey === "__expand__" || columnKey === "__drag__") return;
 
-    const columnIndex = columnsWithSelection.findIndex(
+    const columnIndex = columnsWithDrag.findIndex(
       (col) => col.key === columnKey,
     );
     if (columnIndex === -1) return;
-    if (columnsWithSelection[columnIndex].pinned) return;
+    if (columnsWithDrag[columnIndex].pinned) return;
 
-    const column = columnsWithSelection[columnIndex];
+    const column = columnsWithDrag[columnIndex];
     const startWidth = column.width ?? 150;
 
     resizeStateRef.current = {
@@ -1416,9 +1565,59 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     onColumnResize?.(columnKey, finalWidth);
   }, [onColumnResize]);
 
+  const handleAutoFitColumn = useCallback((columnKey: string) => {
+    const scrollEl = tableAreaRef.current;
+    if (!scrollEl) return;
+
+    const col = columnsWithDrag.find((c) => c.key === columnKey);
+    if (!col) return;
+
+    const headerEl = scrollEl.querySelector<HTMLElement>(
+      `[data-column-key="${columnKey}"] [data-bt-grip]`,
+    )?.parentElement ??
+      scrollEl.querySelector<HTMLElement>(`[data-column-key="${columnKey}"]`);
+
+    let maxWidth = 0;
+
+    if (headerEl) {
+      const title = typeof col.title === "string" ? col.title : col.key;
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        const computedStyle = window.getComputedStyle(headerEl);
+        ctx.font = `${computedStyle.fontWeight} ${computedStyle.fontSize} ${computedStyle.fontFamily}`;
+        maxWidth = ctx.measureText(title).width + 60;
+      }
+    }
+
+    const cells = scrollEl.querySelectorAll<HTMLElement>(
+      `[data-bt-cell][data-column-key="${columnKey}"]`,
+    );
+    cells.forEach((cell) => {
+      const inner = cell.querySelector<HTMLElement>("div > div");
+      if (inner) {
+        const scrollW = inner.scrollWidth;
+        if (scrollW > maxWidth) maxWidth = scrollW;
+      }
+    });
+
+    const finalWidth = Math.max(60, Math.min(Math.ceil(maxWidth) + 24, 800));
+
+    manuallyResizedRef.current.add(columnKey);
+    React.startTransition(() => {
+      setColumnWidths((prev) => {
+        const next = new Map(prev);
+        next.set(columnKey, finalWidth);
+        return next;
+      });
+    });
+    onColumnResize?.(columnKey, finalWidth);
+  }, [columnsWithDrag, onColumnResize]);
+
   const { leftPinned, unpinned, rightPinned } = useMemo(() => {
-    const columnMap = new Map(columnsWithSelection.map((c) => [c.key, c]));
+    const columnMap = new Map(columnsWithDrag.map((c) => [c.key, c]));
     const systemKeys = [
+      ...(rowDragEnabled && onRowReorder ? ["__drag__"] : []),
       ...(rowSelection ? ["__select__"] : []),
       ...(expandable ? ["__expand__"] : []),
     ];
@@ -1436,7 +1635,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
       else center.push(col);
     });
     return { leftPinned: left, unpinned: center, rightPinned: right };
-  }, [columnOrder, columnsWithSelection, rowSelection, expandable]);
+  }, [columnOrder, columnsWithDrag, rowSelection, expandable, rowDragEnabled, onRowReorder]);
 
   const orderedColumns = useMemo(
     () => [...leftPinned, ...unpinned, ...rightPinned],
@@ -1446,7 +1645,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   const freshOrderedColumns = useMemo(() => {
     const latestMap = new Map(initialColumnsRef.current.map((c) => [c.key, c]));
     return orderedColumns.map((col) => {
-      if (col.key === "__select__" || col.key === "__expand__") return col;
+      if (col.key === "__select__" || col.key === "__expand__" || col.key === "__drag__") return col;
       const latest = latestMap.get(col.key);
       if (!latest) return col;
       return {
@@ -2092,7 +2291,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
       return freshOrderedColumns;
     return freshOrderedColumns.filter((col, idx) => {
       if (col.pinned) return true; // always show pinned
-      if (col.key === "__select__" || col.key === "__expand__") return true;
+      if (col.key === "__select__" || col.key === "__expand__" || col.key === "__drag__") return true;
       return idx >= visibleColumnRange.start && idx <= visibleColumnRange.end;
     });
   }, [enableColumnVirtualization, visibleColumnRange, freshOrderedColumns]);
@@ -2281,8 +2480,11 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
           [data-bt-resize]:hover [data-bt-resize-line] {
             opacity: 1 !important;
           }
+          [data-bt-ctx-item] {
+            transition: background-color 0.15s ease;
+          }
           [data-bt-ctx-item]:not(:disabled):hover {
-            background-color: rgba(128, 128, 128, 0.15);
+            background-color: rgba(128, 128, 128, 0.15) !important;
           }
           [data-bt-header][data-dragging] {
             opacity: 0.2 !important;
@@ -2291,6 +2493,17 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
             border: 1px dashed ${accentColor} !important;
           }
           ${onRowClick ? "[data-bt-cell] { cursor: pointer; }" : ""}
+          [data-row-drag-over] {
+            box-shadow: 0 -2px 0 0 ${accentColor} inset;
+          }
+          [data-bt-row-grip] {
+            cursor: grab;
+            opacity: 0.3;
+            transition: opacity 0.15s;
+          }
+          [data-bt-row-grip]:hover {
+            opacity: 0.8;
+          }
           @keyframes bt-spin { to { transform: rotate(360deg); } }
           @keyframes bt-ai-shimmer {
             0% { background-position: -200% 0; }
@@ -2444,7 +2657,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                       {initialColumns
                         .filter(
                           (c) =>
-                            c.key !== "__select__" && c.key !== "__expand__",
+                            c.key !== "__select__" && c.key !== "__expand__" && c.key !== "__drag__",
                         )
                         .map((col) => {
                           const current = columns.find(
@@ -2775,14 +2988,15 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
             <button
               type="button"
               onClick={saveCurrentAIFilter}
+              disabled={justSavedFilter}
               style={{
                 display: "flex",
                 alignItems: "center",
                 gap: 4,
-                background: `${accentColor}12`,
-                border: `1px solid ${accentColor}30`,
+                background: justSavedFilter ? `${accentColor}25` : `${accentColor}12`,
+                border: `1px solid ${justSavedFilter ? accentColor : `${accentColor}30`}`,
                 borderRadius: 4,
-                cursor: "pointer",
+                cursor: justSavedFilter ? "default" : "pointer",
                 padding: "2px 8px",
                 color: accentColor,
                 fontSize: 11,
@@ -2790,10 +3004,14 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                 fontWeight: 500,
                 transition: "all 0.2s ease",
               }}
-              title="Save this filter for quick access later"
+              title={justSavedFilter ? "Filter saved!" : "Save this filter for quick access later"}
             >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-              <span>Save Filter</span>
+              {justSavedFilter ? (
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              ) : (
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+              )}
+              <span>{justSavedFilter ? "Saved" : "Save Filter"}</span>
             </button>
             <button
               type="button"
@@ -2896,7 +3114,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                   const isPinned = !!column.pinned;
                   const offset = columnOffsets.get(column.key);
                   const isSystem =
-                    column.key === "__select__" || column.key === "__expand__";
+                    column.key === "__select__" || column.key === "__expand__" || column.key === "__drag__";
                   return (
                     <div
                       key={column.key}
@@ -2945,7 +3163,8 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                         const offset = columnOffsets.get(column.key);
                         const isSystem =
                           column.key === "__select__" ||
-                          column.key === "__expand__";
+                          column.key === "__expand__" ||
+                          column.key === "__drag__";
                         const widthPercent =
                           SHIMMER_WIDTHS[
                             (rowIndex * 7 + colIndex) % SHIMMER_WIDTHS.length
@@ -3182,7 +3401,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
 
                 {(() => {
                   const firstDataColIndex = orderedColumns.findIndex(
-                    (c) => c.key !== "__select__" && c.key !== "__expand__",
+                    (c) => c.key !== "__select__" && c.key !== "__expand__" && c.key !== "__drag__",
                   );
                   return orderedColumns.map((column, visualIndex) => {
                     const isInGroup =
@@ -3272,6 +3491,40 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                       );
                     }
 
+                    if (column.key === "__drag__") {
+                      return (
+                        <div
+                          key="__drag__"
+                          data-bt-header=""
+                          data-bt-pinned=""
+                          className={`${classNames.header ?? ""} ${classNames.pinnedHeader ?? ""}`}
+                          style={{
+                            display: "flex",
+                            height: leafHeight,
+                            alignItems: "center",
+                            justifyContent: "center",
+                            overflow: "hidden",
+                            whiteSpace: "nowrap" as const,
+                            boxSizing: "border-box",
+                            position: "sticky",
+                            left: columnOffsets.get("__drag__") ?? 0,
+                            top: 0,
+                            zIndex: 13,
+                            width: "36px",
+                            gridRow: leafGridRow,
+                            ...styles.header,
+                            ...styles.pinnedHeader,
+                            borderTop: "none",
+                            borderLeft: "none",
+                            borderBottom: "1px solid rgba(128,128,128,0.2)",
+                            borderRight: "1px solid rgba(128,128,128,0.2)",
+                          }}
+                        >
+                          <GripVerticalIcon style={{ width: 12, height: 12, opacity: 0.4 }} />
+                        </div>
+                      );
+                    }
+
                     if (column.key === "__expand__") {
                       return (
                         <div
@@ -3345,6 +3598,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                         headerGridRow={leafGridRow}
                         headerHeight={leafHeight}
                         stickyTop={leafStickyTop}
+                        onAutoFitColumn={handleAutoFitColumn}
                       />
                     );
                   });
@@ -3484,6 +3738,11 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                       aiCellStyleOps.length > 0
                         ? (record: DataRecord, columnKey: string) =>
                             getAICellStyleForRecord(record as T, columnKey)
+                        : undefined
+                    }
+                    onRowDragStart={
+                      rowDragEnabled && onRowReorder
+                        ? handleRowDragStart
                         : undefined
                     }
                   />
@@ -3826,6 +4085,34 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
               </div>
             </div>
           </div>,
+          document.body,
+        )}
+
+      {mounted && rowDragEnabled && onRowReorder &&
+        createPortal(
+          <div
+            ref={rowDragGhostRef}
+            style={{
+              display: "none",
+              position: "fixed",
+              zIndex: 99999,
+              height: 32,
+              fontSize: 11,
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "0 12px",
+              borderRadius: 6,
+              border: `1px dashed ${accentColor}60`,
+              boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
+              backdropFilter: "blur(16px)",
+              WebkitBackdropFilter: "blur(16px)",
+              backgroundColor: "rgba(128,128,128,0.12)",
+              cursor: "grabbing",
+              pointerEvents: "none",
+              fontWeight: 500,
+              color: accentColor,
+            }}
+          />,
           document.body,
         )}
 
