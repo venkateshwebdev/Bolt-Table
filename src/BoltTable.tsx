@@ -70,6 +70,7 @@ import ResizeOverlay, { type ResizeOverlayHandle } from "./ResizeOverlay";
 import TableBody from "./TableBody";
 import type {
   AICellStyleOperation,
+  AIOperation,
   AIResponse,
   AIStyleOperation,
   BoltTableAIConfig,
@@ -664,6 +665,116 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   const [aiSortKey, setAiSortKey] = useState<string | null>(null);
   const [aiSortDir, setAiSortDir] = useState<"asc" | "desc" | null>(null);
 
+  // ── Saved AI Filters (localStorage) ──────────────────────────────────
+  const aiFiltersStorageKey = columnPersistence && typeof columnPersistence === "object"
+    ? `bt-ai-filters-${columnPersistence.storageKey}`
+    : "bt-ai-filters";
+
+  const [savedAIFilters, setSavedAIFilters] = useState<
+    { label: string; operations: AIOperation[]; query: string }[]
+  >(() => {
+    try {
+      const raw = localStorage.getItem(aiFiltersStorageKey);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [showSavedFilters, setShowSavedFilters] = useState(false);
+  const savedFiltersRef = useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!showSavedFilters) return;
+    const close = (e: MouseEvent) => {
+      if (savedFiltersRef.current && !savedFiltersRef.current.contains(e.target as Node)) {
+        setShowSavedFilters(false);
+      }
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [showSavedFilters]);
+
+  const saveCurrentAIFilter = useCallback(() => {
+    if (!aiResult) return;
+    const label = aiQuery || aiResult.message;
+    const entry = { label, operations: aiResult.operations, query: aiQuery };
+    const next = [...savedAIFilters, entry];
+    setSavedAIFilters(next);
+    try { localStorage.setItem(aiFiltersStorageKey, JSON.stringify(next)); } catch { /* noop */ }
+  }, [aiResult, aiQuery, savedAIFilters, aiFiltersStorageKey]);
+
+  const removeSavedFilter = useCallback((index: number) => {
+    const next = savedAIFilters.filter((_, i) => i !== index);
+    setSavedAIFilters(next);
+    try { localStorage.setItem(aiFiltersStorageKey, JSON.stringify(next)); } catch { /* noop */ }
+  }, [savedAIFilters, aiFiltersStorageKey]);
+
+  const applySavedFilter = useCallback((filter: { label: string; operations: AIOperation[]; query: string }) => {
+    const { filteredData, sortOp, styleOps: sOps, cellStyleOps: csOps, hideColumns: hideCols, showColumns: showCols, resizeOps, reorderOp, pinOps, setPageOp } =
+      applyAIOperations(data as DataRecord[], filter.operations);
+
+    setAiStyleOps(sOps);
+    setAiCellStyleOps(csOps);
+
+    if (filter.operations.some((op) => op.type === "filter")) {
+      const keySet = new Set<string>();
+      filteredData.forEach((row, idx) => {
+        const k =
+          typeof rowKey === "function"
+            ? (rowKey as (r: T) => string)(row as T)
+            : String((row as DataRecord)[typeof rowKey === "string" ? rowKey : "id"] ?? idx);
+        keySet.add(k);
+      });
+      setAiFilteredDataKeys(keySet);
+    } else {
+      setAiFilteredDataKeys(null);
+    }
+
+    if (sortOp) {
+      setAiSortKey(sortOp.column);
+      setAiSortDir(sortOp.direction);
+    } else {
+      setAiSortKey(null);
+      setAiSortDir(null);
+    }
+
+    if (hideCols.length > 0 || showCols.length > 0) {
+      setColumns((prev) =>
+        prev.map((col) => {
+          if (hideCols.includes(col.key)) return { ...col, hidden: true };
+          if (showCols.includes(col.key)) return { ...col, hidden: false };
+          return col;
+        }),
+      );
+    }
+
+    for (const rOp of resizeOps) {
+      const w = Math.max(40, Math.min(800, rOp.width));
+      setColumnWidths((prev) => { const n = new Map(prev); n.set(rOp.column, w); return n; });
+      onColumnResize?.(rOp.column, w);
+    }
+
+    if (reorderOp) {
+      setColumnOrder(reorderOp.order);
+      onColumnOrderChange?.(reorderOp.order);
+    }
+
+    for (const pOp of pinOps) {
+      setColumns((prev) =>
+        prev.map((col) => col.key === pOp.column ? { ...col, pinned: pOp.pinned } : col),
+      );
+      onColumnPin?.(pOp.column, pOp.pinned);
+    }
+
+    if (setPageOp) {
+      setInternalPage(setPageOp.page);
+    }
+
+    setAiResult({ operations: filter.operations, message: `Applied saved filter: ${filter.label}` });
+    setShowSavedFilters(false);
+  }, [data, rowKey, onColumnResize, onColumnOrderChange, onColumnPin]);
+
   const onAIResponseRef = useRef(onAIResponse);
   onAIResponseRef.current = onAIResponse;
 
@@ -687,7 +798,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
         throw new Error("AI mode requires either aiConfig or onAIQuery prop");
       }
 
-      const { filteredData, sortOp, styleOps: sOps, cellStyleOps: csOps, hideColumns, showColumns } =
+      const { filteredData, sortOp, styleOps: sOps, cellStyleOps: csOps, hideColumns: hideCols, showColumns: showCols, resizeOps, reorderOp, pinOps, setPageOp } =
         applyAIOperations(data as DataRecord[], response.operations);
 
       setAiStyleOps(sOps);
@@ -715,14 +826,36 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
         setAiSortDir(null);
       }
 
-      if (hideColumns.length > 0 || showColumns.length > 0) {
+      if (hideCols.length > 0 || showCols.length > 0) {
         setColumns((prev) =>
           prev.map((col) => {
-            if (hideColumns.includes(col.key)) return { ...col, hidden: true };
-            if (showColumns.includes(col.key)) return { ...col, hidden: false };
+            if (hideCols.includes(col.key)) return { ...col, hidden: true };
+            if (showCols.includes(col.key)) return { ...col, hidden: false };
             return col;
           }),
         );
+      }
+
+      for (const rOp of resizeOps) {
+        const w = Math.max(40, Math.min(800, rOp.width));
+        setColumnWidths((prev) => { const n = new Map(prev); n.set(rOp.column, w); return n; });
+        onColumnResize?.(rOp.column, w);
+      }
+
+      if (reorderOp) {
+        setColumnOrder(reorderOp.order);
+        onColumnOrderChange?.(reorderOp.order);
+      }
+
+      for (const pOp of pinOps) {
+        setColumns((prev) =>
+          prev.map((col) => col.key === pOp.column ? { ...col, pinned: pOp.pinned } : col),
+        );
+        onColumnPin?.(pOp.column, pOp.pinned);
+      }
+
+      if (setPageOp) {
+        setInternalPage(setPageOp.page);
       }
 
       setAiResult(response);
@@ -2177,7 +2310,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
               borderBottom: "1px solid rgba(128,128,128,0.2)",
               fontSize: 12,
               flexShrink: 0,
-              overflow: "hidden",
+              zIndex: 20,
             }}
           >
             {/* ── Normal toolbar items ── */}
@@ -2361,6 +2494,96 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                             </label>
                           );
                         })}
+                    </div>
+                  )}
+                </div>
+              )}
+              {/* ── Saved AI Filters dropdown ── */}
+              {aiMode && savedAIFilters.length > 0 && (
+                <div ref={savedFiltersRef} style={{ position: "relative", flexShrink: 0 }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowSavedFilters((p) => !p)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                      background: "none",
+                      border: "1px solid rgba(128,128,128,0.2)",
+                      borderRadius: 4,
+                      cursor: "pointer",
+                      padding: "4px 6px",
+                      color: "inherit",
+                      fontSize: 12,
+                    }}
+                    title="Saved AI filters"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                    <span>{savedAIFilters.length}</span>
+                  </button>
+                  {showSavedFilters && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: "100%",
+                        right: 0,
+                        zIndex: 99999,
+                        minWidth: 240,
+                        maxWidth: 360,
+                        maxHeight: 320,
+                        overflowY: "auto",
+                        borderRadius: 8,
+                        border: "1px solid rgba(128,128,128,0.2)",
+                        boxShadow: "0 4px 24px rgba(0,0,0,0.12)",
+                        backdropFilter: "blur(16px)",
+                        WebkitBackdropFilter: "blur(16px)",
+                        backgroundColor: "rgba(128,128,128,0.08)",
+                        padding: "4px 0",
+                        marginTop: 4,
+                      }}
+                    >
+                      <div style={{ padding: "6px 12px", fontSize: 11, opacity: 0.5, fontWeight: 600 }}>
+                        Saved Filters
+                      </div>
+                      {savedAIFilters.map((f, i) => (
+                        <div
+                          key={i}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                            padding: "6px 12px",
+                            cursor: "pointer",
+                            fontSize: 12,
+                          }}
+                          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "rgba(128,128,128,0.15)"; }}
+                          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "transparent"; }}
+                        >
+                          <span
+                            style={{ flex: "1 1 0%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                            onClick={() => applySavedFilter(f)}
+                          >
+                            {f.label}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); removeSavedFilter(i); }}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              background: "none",
+                              border: "none",
+                              cursor: "pointer",
+                              padding: 2,
+                              color: "GrayText",
+                              flexShrink: 0,
+                            }}
+                            title="Remove"
+                          >
+                            {icons?.close ?? <XIcon style={{ width: 10, height: 10 }} />}
+                          </button>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -2549,6 +2772,29 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
             <span style={{ flex: "1 1 0%", opacity: 0.85 }}>
               {aiResult.message}
             </span>
+            <button
+              type="button"
+              onClick={saveCurrentAIFilter}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                background: `${accentColor}12`,
+                border: `1px solid ${accentColor}30`,
+                borderRadius: 4,
+                cursor: "pointer",
+                padding: "2px 8px",
+                color: accentColor,
+                fontSize: 11,
+                flexShrink: 0,
+                fontWeight: 500,
+                transition: "all 0.2s ease",
+              }}
+              title="Save this filter for quick access later"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+              <span>Save Filter</span>
+            </button>
             <button
               type="button"
               onClick={handleAIClear}

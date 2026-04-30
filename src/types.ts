@@ -334,13 +334,43 @@ export interface AIColumnVisibilityOperation {
   columns: string[];
 }
 
+/** Resize a column to a specific width. */
+export interface AIResizeColumnOperation {
+  type: "resizeColumn";
+  column: string;
+  width: number;
+}
+
+/** Reorder columns by moving a column to a new position. */
+export interface AIReorderColumnsOperation {
+  type: "reorderColumns";
+  order: string[];
+}
+
+/** Pin or unpin a column. */
+export interface AIPinColumnOperation {
+  type: "pinColumn";
+  column: string;
+  pinned: "left" | "right" | false;
+}
+
+/** Set the current page number. */
+export interface AISetPageOperation {
+  type: "setPage";
+  page: number;
+}
+
 /** Union of all possible AI operations. */
 export type AIOperation =
   | AIFilterOperation
   | AIStyleOperation
   | AICellStyleOperation
   | AISortOperation
-  | AIColumnVisibilityOperation;
+  | AIColumnVisibilityOperation
+  | AIResizeColumnOperation
+  | AIReorderColumnsOperation
+  | AIPinColumnOperation
+  | AISetPageOperation;
 
 /** The structured response returned by the AI. */
 export interface AIResponse {

@@ -4,7 +4,11 @@ import type {
   AICondition,
   AIFilterOperation,
   AIOperation,
+  AIPinColumnOperation,
+  AIReorderColumnsOperation,
+  AIResizeColumnOperation,
   AIResponse,
+  AISetPageOperation,
   AISortOperation,
   AIStyleOperation,
   AICellStyleOperation,
@@ -43,74 +47,83 @@ function detectColumnType(
   return { type: "string", sample: sampleStr };
 }
 
+let cachedSchema: { fingerprint: string; prompt: string } | null = null;
+
+function buildSchemaFingerprint<T extends DataRecord>(
+  columns: ColumnType<T>[],
+  dataLen: number,
+): string {
+  return columns
+    .filter((c) => c.key !== "__select__" && c.key !== "__expand__")
+    .map((c) => c.key)
+    .join(",") + `:${dataLen}`;
+}
+
 export function buildSystemPrompt<T extends DataRecord>(
   columns: ColumnType<T>[],
   data: T[],
 ): string {
-  const schemaLines = columns
-    .filter((c) => c.key !== "__select__" && c.key !== "__expand__")
-    .map((c) => {
-      const key = c.dataIndex ?? c.key;
-      const title = typeof c.title === "string" ? c.title : c.key;
-      const info = detectColumnType(key, data);
-      return `  - key: "${c.key}", title: "${title}", dataIndex: "${key}", type: ${info.type}${info.sample ? ` (values: ${info.sample})` : ""}`;
-    })
-    .join("\n");
+  const fingerprint = buildSchemaFingerprint(columns, data.length);
+  if (cachedSchema?.fingerprint === fingerprint) {
+    return cachedSchema.prompt;
+  }
 
-  const sample = data.slice(0, 5).map((row) => {
+  const cols = columns.filter((c) => c.key !== "__select__" && c.key !== "__expand__");
+  const schema = cols.map((c) => {
+    const key = c.dataIndex ?? c.key;
+    const title = typeof c.title === "string" ? c.title : c.key;
+    const info = detectColumnType(key, data);
+    const w = c.width ?? 150;
+    const pin = c.pinned ? `, pinned: "${c.pinned}"` : "";
+    const hidden = c.hidden ? ", hidden: true" : "";
+    const vals = info.sample ? "|vals: " + info.sample : "";
+    return `  ${c.key}|${key}|"${title}"|${info.type}|w:${w}${pin}${hidden}${vals}`;
+  }).join("\n");
+
+  const sample = data.slice(0, 3).map((row) => {
     const obj: Record<string, unknown> = {};
-    for (const col of columns) {
-      if (col.key === "__select__" || col.key === "__expand__") continue;
+    for (const col of cols) {
       const di = col.dataIndex ?? col.key;
       obj[di] = row[di];
     }
     return obj;
   });
 
-  return `You are a data table assistant. You help users query, filter, sort, and style tabular data.
-You MUST respond with ONLY a valid JSON object — no markdown fences, no explanation, no extra text.
+  const prompt = `Data table AI. Respond ONLY with valid JSON, no markdown/explanation.
 
-## Table Schema
-${schemaLines}
+SCHEMA (key|dataIndex|title|type|width|flags|sample):
+${schema}
 
-## Sample Data (first ${sample.length} of ${data.length} rows)
-${JSON.stringify(sample, null, 2)}
+SAMPLE (${sample.length}/${data.length} rows):
+${JSON.stringify(sample)}
 
-## Available Operations
-Combine any of these in a single response:
+COLUMN ORDER: [${cols.map((c) => `"${c.key}"`).join(",")}]
 
-1. **filter** — show only rows matching conditions
-   { "type": "filter", "conditions": [{ "column": "<dataIndex>", "op": "<op>", "value": <val> }], "logic": "and" | "or" }
+OPS (combine any):
+filter: {type:"filter",conditions:[{column:"<dataIndex>",op:"<op>",value:<v>}],logic:"and"|"or"}
+sort: {type:"sort",column:"<dataIndex>",direction:"asc"|"desc"}
+rowStyle: {type:"rowStyle",conditions:[...],logic:"and"|"or",style:{cssProp:"val"}}
+cellStyle: {type:"cellStyle",column:"<dataIndex>",conditions:[...],logic:"and"|"or",style:{cssProp:"val"}}
+hideColumns: {type:"hideColumns",columns:["key",...]}
+showColumns: {type:"showColumns",columns:["key",...]}
+resizeColumn: {type:"resizeColumn",column:"<key>",width:<px>}
+reorderColumns: {type:"reorderColumns",order:["key1","key2",...]}  (full column order)
+pinColumn: {type:"pinColumn",column:"<key>",pinned:"left"|"right"|false}
+setPage: {type:"setPage",page:<number>}
 
-2. **rowStyle** — apply CSS styles to entire rows matching conditions
-   { "type": "rowStyle", "conditions": [...], "logic": "and"|"or", "style": { "<cssProp>": "<value>" } }
+OPS: eq,neq,gt,gte,lt,lte,contains,notContains,startsWith,endsWith,in,notIn
 
-3. **cellStyle** — apply CSS styles to a specific column's cells matching conditions
-   { "type": "cellStyle", "column": "<dataIndex>", "conditions": [...], "logic": "and"|"or", "style": { "<cssProp>": "<value>" } }
+FORMAT: {"operations":[...],"message":"brief description"}
 
-4. **sort** — sort data by a column
-   { "type": "sort", "column": "<dataIndex>", "direction": "asc" | "desc" }
+RULES:
+- Use dataIndex for data ops, key for column ops (hide/show/resize/reorder/pin).
+- Colors: semi-transparent rgba. CSS props: camelCase.
+- reorderColumns: provide FULL ordered array of ALL visible column keys.
+- resizeColumn width: integer pixels (min 40, max 800).
+- Combine multiple ops freely. Message: concise plain English.`;
 
-5. **hideColumns** / **showColumns** — toggle column visibility
-   { "type": "hideColumns" | "showColumns", "columns": ["<key>", ...] }
-
-## Operators
-eq, neq, gt, gte, lt, lte, contains, notContains, startsWith, endsWith, in, notIn
-
-## Response format
-{
-  "operations": [ ... ],
-  "message": "Brief user-friendly description of what was applied"
-}
-
-## Rules
-- Use the dataIndex values from the schema, not display titles.
-- For colors use semi-transparent values like "rgba(255,0,0,0.15)" so text stays readable.
-- CSS property names must be camelCase (e.g. "backgroundColor", "color", "fontWeight").
-- If the user asks to highlight / color / mark specific rows, use rowStyle or cellStyle.
-- If the user asks to show only certain rows, use filter.
-- You can combine filter + rowStyle + sort etc. in one response.
-- The "message" should be concise: what was done, in plain English.`;
+  cachedSchema = { fingerprint, prompt };
+  return prompt;
 }
 
 export async function callAI(
@@ -335,23 +348,33 @@ export function getAICellStyle(
   return merged;
 }
 
-export function applyAIOperations<T extends DataRecord>(
-  data: T[],
-  operations: AIOperation[],
-): {
+export interface AIOperationsResult<T extends DataRecord> {
   filteredData: T[];
   sortOp: AISortOperation | null;
   styleOps: AIStyleOperation[];
   cellStyleOps: AICellStyleOperation[];
   hideColumns: string[];
   showColumns: string[];
-} {
+  resizeOps: AIResizeColumnOperation[];
+  reorderOp: AIReorderColumnsOperation | null;
+  pinOps: AIPinColumnOperation[];
+  setPageOp: AISetPageOperation | null;
+}
+
+export function applyAIOperations<T extends DataRecord>(
+  data: T[],
+  operations: AIOperation[],
+): AIOperationsResult<T> {
   let filteredData = data;
   let sortOp: AISortOperation | null = null;
   const styleOps: AIStyleOperation[] = [];
   const cellStyleOps: AICellStyleOperation[] = [];
   const hideColumns: string[] = [];
   const showColumns: string[] = [];
+  const resizeOps: AIResizeColumnOperation[] = [];
+  let reorderOp: AIReorderColumnsOperation | null = null;
+  const pinOps: AIPinColumnOperation[] = [];
+  let setPageOp: AISetPageOperation | null = null;
 
   for (const op of operations) {
     switch (op.type) {
@@ -373,6 +396,18 @@ export function applyAIOperations<T extends DataRecord>(
       case "showColumns":
         showColumns.push(...op.columns);
         break;
+      case "resizeColumn":
+        resizeOps.push(op);
+        break;
+      case "reorderColumns":
+        reorderOp = op;
+        break;
+      case "pinColumn":
+        pinOps.push(op);
+        break;
+      case "setPage":
+        setPageOp = op;
+        break;
     }
   }
 
@@ -380,5 +415,5 @@ export function applyAIOperations<T extends DataRecord>(
     filteredData = applyAISort(filteredData, sortOp);
   }
 
-  return { filteredData, sortOp, styleOps, cellStyleOps, hideColumns, showColumns };
+  return { filteredData, sortOp, styleOps, cellStyleOps, hideColumns, showColumns, resizeOps, reorderOp, pinOps, setPageOp };
 }
