@@ -14,6 +14,10 @@ export type {
   DataRecord,
   RowPinningConfig,
   ColumnPersistenceConfig,
+  ConditionalFormatRule,
+  RowGroupingConfig,
+  AggregateFunction,
+  TreeDataConfig,
   // AI types
   AIOperator,
   AICondition,

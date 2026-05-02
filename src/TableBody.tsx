@@ -130,6 +130,24 @@ interface TableBodyProps {
 
   /** Called when the user starts dragging a row by its grip handle. */
   onRowDragStart?: (rowIndex: number, e: React.PointerEvent) => void;
+
+  /** Currently focused cell coordinates for keyboard navigation. */
+  focusedCell?: { row: number; col: number } | null;
+
+  /** Enable row position animation on data changes. */
+  enableRowAnimation?: boolean;
+
+  /** Called when a group header is clicked to toggle collapse. */
+  onGroupToggle?: (groupKey: string) => void;
+
+  /** Accent color for group headers. */
+  groupAccentColor?: string;
+
+  /** Called when a tree node expand/collapse is toggled. */
+  onTreeToggle?: (key: React.Key) => void;
+
+  /** Tree data indent size in pixels per level. */
+  treeIndentSize?: number;
 }
 
 const SHIMMER_WIDTHS = [55, 70, 45, 80, 60, 50, 75, 65];
@@ -164,6 +182,13 @@ interface CellProps {
     record: DataRecord,
     columnKey: string,
   ) => React.CSSProperties | undefined;
+  treeLevel?: number;
+  treeHasChildren?: boolean;
+  treeExpanded?: boolean;
+  treeIndentSize?: number;
+  onTreeToggle?: (key: React.Key) => void;
+  treeKey?: React.Key;
+  isFirstDataCol?: boolean;
 }
 
 const EditableCell = ({
@@ -186,63 +211,112 @@ const EditableCell = ({
   ) => void;
   onEditComplete: () => void;
 }) => {
+  const editorType = column.editorType ?? "text";
   const [draft, setDraft] = useState(String(value ?? ""));
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement | HTMLSelectElement>(null);
 
   useEffect(() => {
     setDraft(String(value ?? ""));
     requestAnimationFrame(() => {
       inputRef.current?.focus();
-      inputRef.current?.select();
+      if (inputRef.current instanceof HTMLInputElement) {
+        inputRef.current.select();
+      }
     });
   }, [value]);
 
-  const commit = useCallback(() => {
-    const raw = String(value ?? "");
-    if (draft !== raw && column.dataIndex) {
-      const coerced: unknown =
-        typeof value === "number" && !Number.isNaN(Number(draft))
-          ? Number(draft)
-          : draft;
-      onEdit(coerced, record, column.dataIndex, rowIndex);
-    }
-    onEditComplete();
-  }, [
-    draft,
-    value,
-    column.dataIndex,
-    record,
-    rowIndex,
-    onEdit,
-    onEditComplete,
-  ]);
+  const commit = useCallback(
+    (newVal?: unknown) => {
+      const raw = String(value ?? "");
+      const finalVal = newVal !== undefined ? newVal : draft;
+      if (String(finalVal) !== raw && column.dataIndex) {
+        let coerced: unknown = finalVal;
+        if (newVal === undefined) {
+          coerced =
+            typeof value === "number" && !Number.isNaN(Number(draft))
+              ? Number(draft)
+              : draft;
+        }
+        onEdit(coerced, record, column.dataIndex, rowIndex);
+      }
+      onEditComplete();
+    },
+    [draft, value, column.dataIndex, record, rowIndex, onEdit, onEditComplete],
+  );
 
   const cancel = useCallback(() => {
     onEditComplete();
   }, [onEditComplete]);
 
+  const baseStyle: React.CSSProperties = {
+    width: "100%",
+    height: "100%",
+    border: "none",
+    outline: "none",
+    background: "transparent",
+    font: "inherit",
+    color: "inherit",
+    padding: 0,
+    margin: 0,
+    boxSizing: "border-box",
+  };
+
+  if (editorType === "toggle") {
+    return (
+      <label style={{ display: "flex", alignItems: "center", cursor: "pointer", width: "100%", height: "100%" }}>
+        <input
+          data-bt-check=""
+          type="checkbox"
+          checked={!!value}
+          onChange={(e) => {
+            commit(e.target.checked);
+          }}
+        />
+      </label>
+    );
+  }
+
+  if (editorType === "select") {
+    const options = column.editorOptions ?? [];
+    return (
+      <select
+        ref={inputRef as React.RefObject<HTMLSelectElement>}
+        value={draft}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          commit(e.target.value);
+        }}
+        onBlur={() => commit()}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") cancel();
+        }}
+        style={{ ...baseStyle, cursor: "pointer" }}
+      >
+        {options.map((opt) => {
+          const label = typeof opt === "string" ? opt : opt.label;
+          const val = typeof opt === "string" ? opt : String(opt.value);
+          return (
+            <option key={val} value={val}>
+              {label}
+            </option>
+          );
+        })}
+      </select>
+    );
+  }
+
   return (
     <input
-      ref={inputRef}
+      ref={inputRef as React.RefObject<HTMLInputElement>}
+      type={editorType === "date" ? "date" : editorType === "number" ? "number" : "text"}
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
+      onBlur={() => commit()}
       onKeyDown={(e) => {
         if (e.key === "Enter") commit();
         if (e.key === "Escape") cancel();
       }}
-      style={{
-        width: "100%",
-        height: "100%",
-        border: "none",
-        outline: "none",
-        background: "transparent",
-        font: "inherit",
-        color: "inherit",
-        padding: 0,
-        margin: 0,
-        boxSizing: "border-box",
-      }}
+      style={baseStyle}
     />
   );
 };
@@ -268,9 +342,29 @@ const Cell = React.memo(
     isEditing,
     onEditComplete,
     cellStyleFn,
+    treeLevel,
+    treeHasChildren,
+    treeExpanded,
+    treeIndentSize = 20,
+    onTreeToggle,
+    treeKey,
+    isFirstDataCol,
   }: CellProps) => {
     const isPinned = Boolean(column.pinned);
     const extraCellStyle = cellStyleFn?.(record, column.dataIndex ?? column.key);
+
+    const [lazyValue, setLazyValue] = useState<{ loaded: boolean; value: unknown }>({ loaded: false, value: undefined });
+    useEffect(() => {
+      if (!column.lazyLoad) return;
+      let cancelled = false;
+      setLazyValue({ loaded: false, value: undefined });
+      column.lazyLoad(record).then((v) => {
+        if (!cancelled) setLazyValue({ loaded: true, value: v });
+      }).catch(() => {
+        if (!cancelled) setLazyValue({ loaded: true, value: undefined });
+      });
+      return () => { cancelled = true; };
+    }, [column.lazyLoad, record]);
     if (
       isLoading &&
       column.key !== "__select__" &&
@@ -324,6 +418,7 @@ const Cell = React.memo(
       const content =
         rowSelection.type === "radio" ? (
           <input
+            data-bt-check=""
             type="radio"
             checked={!!isSelected}
             disabled={checkboxProps.disabled}
@@ -332,14 +427,10 @@ const Cell = React.memo(
               rowSelection.onSelect?.(record, true, [record], e.nativeEvent);
               rowSelection.onChange?.([rawKey], [record], { type: "single" });
             }}
-            style={{
-              cursor: "pointer",
-              accentColor,
-              backgroundColor: "#94A3B8",
-            }}
           />
         ) : (
           <input
+            data-bt-check=""
             type="checkbox"
             checked={!!isSelected}
             disabled={checkboxProps.disabled}
@@ -362,11 +453,6 @@ const Cell = React.memo(
               rowSelection.onChange?.(newSelected, newSelectedRows, {
                 type: "multiple",
               });
-            }}
-            style={{
-              cursor: "pointer",
-              accentColor,
-              backgroundColor: "#94A3B8",
             }}
           />
         );
@@ -397,6 +483,39 @@ const Cell = React.memo(
       );
     }
 
+    if (column.lazyLoad && !lazyValue.loaded) {
+      return (
+        <div
+          role="gridcell"
+          className={`${column.className ?? ""} ${classNames?.cell ?? ""}`}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            overflow: "hidden",
+            borderBottom: "1px solid rgba(128,128,128,0.2)",
+            paddingLeft: 8,
+            paddingRight: 8,
+            height: "100%",
+            boxSizing: "border-box",
+            ...column.style,
+            ...styles?.cell,
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: "rgba(100, 116, 139, 0.15)",
+              animation: "bt-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+              borderRadius: 4,
+              width: "60%",
+              height: 14,
+            }}
+          />
+        </div>
+      );
+    }
+
+    const effectiveValue = column.lazyLoad ? lazyValue.value : value;
+
     const isEditable = !!column.editable && !column.render && !!onEdit;
     const showEditor = isEditable && isEditing && onEditComplete;
 
@@ -404,7 +523,7 @@ const Cell = React.memo(
     if (showEditor) {
       content = (
         <EditableCell
-          value={value}
+          value={effectiveValue}
           record={record}
           column={column}
           rowIndex={rowIndex}
@@ -414,25 +533,29 @@ const Cell = React.memo(
       );
     } else if (column.render) {
       try {
-        content = column.render(value, record, rowIndex);
+        content = column.render(effectiveValue, record, rowIndex);
       } catch {
-        content = String(value ?? "");
+        content = String(effectiveValue ?? "");
       }
     } else {
-      content = (value as React.ReactNode) ?? "";
+      content = (effectiveValue as React.ReactNode) ?? "";
     }
 
     const isSystem = column.key === "__select__" || column.key === "__expand__";
+    const showTreeIndent = isFirstDataCol && treeLevel != null && treeLevel > 0;
+    const showTreeToggle = isFirstDataCol && treeHasChildren;
+    const treeIndent = showTreeIndent ? treeLevel * treeIndentSize : 0;
 
     return (
       <div
+        role="gridcell"
         className={`${column.className ?? ""} ${classNames?.cell ?? ""} ${isPinned ? (classNames?.pinnedCell ?? "") : ""}`}
         style={{
           display: "flex",
           alignItems: "center",
           overflow: "hidden",
           borderBottom: "1px solid rgba(128,128,128,0.2)",
-          paddingLeft: 8,
+          paddingLeft: isFirstDataCol ? 8 + treeIndent : 8,
           paddingRight: 8,
           justifyContent: isSystem ? "center" : undefined,
           height: "100%",
@@ -444,6 +567,35 @@ const Cell = React.memo(
           ...extraCellStyle,
         }}
       >
+        {showTreeToggle && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onTreeToggle?.(treeKey!); }}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              padding: 0,
+              marginRight: 4,
+              width: 16,
+              height: 16,
+              flexShrink: 0,
+              transform: treeExpanded ? "rotate(0deg)" : "rotate(-90deg)",
+              transition: "transform 0.15s ease",
+              fontSize: "0.75em",
+              color: "inherit",
+              opacity: 0.6,
+            }}
+          >
+            ▼
+          </button>
+        )}
+        {isFirstDataCol && treeLevel != null && !treeHasChildren && (
+          <span style={{ display: "inline-block", width: 20, flexShrink: 0 }} />
+        )}
         {isSystem ? (
           content
         ) : showEditor ? (
@@ -456,6 +608,14 @@ const Cell = React.memo(
               whiteSpace: "nowrap",
               minWidth: 0,
               maxWidth: "100%",
+            }}
+            onMouseEnter={(e) => {
+              const el = e.currentTarget;
+              if (el.scrollWidth > el.clientWidth) {
+                el.title = el.textContent ?? "";
+              } else {
+                el.removeAttribute("title");
+              }
             }}
           >
             {content}
@@ -603,6 +763,12 @@ const TableBody: React.FC<TableBodyProps> = ({
   columnGridIndexMap,
   cellStyleFn,
   onRowDragStart,
+  focusedCell,
+  enableRowAnimation = false,
+  onGroupToggle,
+  groupAccentColor,
+  onTreeToggle,
+  treeIndentSize = 20,
 }) => {
   const virtualItems = rowVirtualizer.getVirtualItems();
   const totalSize = rowVirtualizer.getTotalSize();
@@ -613,6 +779,11 @@ const TableBody: React.FC<TableBodyProps> = ({
 
   const safeData = data ?? [];
   const safeColumns = orderedColumns ?? [];
+
+  const firstDataColIndex = useMemo(() => {
+    const systemKeys = new Set(["__select__", "__expand__", "__drag__"]);
+    return safeColumns.findIndex((c) => !systemKeys.has(c.key));
+  }, [safeColumns]);
 
   const allDataForSelection = useMemo(() => {
     if (pinnedTopData.length === 0 && pinnedBottomData.length === 0)
@@ -672,6 +843,69 @@ const TableBody: React.FC<TableBodyProps> = ({
             {virtualItems.map((virtualRow: VirtualItem) => {
               const row = safeData[virtualRow.index];
               if (row == null) return null;
+
+              const isGroupHeader = !!(row as any).__bt_group_header__;
+              if (isGroupHeader) {
+                const gk = (row as any).__bt_group_key__ as string;
+                const gv = (row as any).__bt_group_value__;
+                const gCount = (row as any).__bt_group_count__ as number;
+                const gCollapsed = (row as any).__bt_group_collapsed__ as boolean;
+                const gAggregates = ((row as any).__bt_group_aggregates__ ?? {}) as Record<string, unknown>;
+
+                if (colIndex === 0) {
+                  return (
+                    <div
+                      key={`group-${gk}`}
+                      data-bt-group-header={gk}
+                      className={classNames?.groupHeader ?? ""}
+                      style={{
+                        position: "absolute",
+                        top: `${virtualRow.start}px`,
+                        left: 0,
+                        right: 0,
+                        height: `${virtualRow.size}px`,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        paddingLeft: 8,
+                        paddingRight: 8,
+                        fontSize: "inherit",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        borderBottom: "1px solid rgba(128,128,128,0.2)",
+                        background: `linear-gradient(90deg, ${groupAccentColor ?? "#6366f1"}08, transparent)`,
+                        gridColumn: "1 / -1",
+                        userSelect: "none",
+                        ...styles?.groupHeader,
+                      }}
+                      onClick={() => onGroupToggle?.(gk)}
+                    >
+                      <span style={{
+                        display: "inline-flex",
+                        transform: gCollapsed ? "rotate(-90deg)" : "rotate(0deg)",
+                        transition: "transform 0.15s ease",
+                        fontSize: "0.75em",
+                      }}>
+                        ▼
+                      </span>
+                      <span>{String(gv ?? gk)}</span>
+                      <span style={{ opacity: 0.5, fontWeight: 400 }}>({gCount})</span>
+                      {Object.entries(gAggregates).map(([k, v]) => (
+                        <span key={k} style={{ opacity: 0.6, fontWeight: 400, marginLeft: 4 }}>
+                          {k}: {String(v ?? "")}
+                        </span>
+                      ))}
+                    </div>
+                  );
+                }
+                return null;
+              }
+
+              const tLevel = (row as any).__bt_tree_level__ as number | undefined;
+              const tHasChildren = (row as any).__bt_tree_has_children__ as boolean | undefined;
+              const tExpanded = (row as any).__bt_tree_expanded__ as boolean | undefined;
+              const tKey = (row as any).__bt_tree_key__ as React.Key | undefined;
+
               const rowKey = getRowKey
                 ? getRowKey(row, virtualRow.index)
                 : String(virtualRow.index);
@@ -704,6 +938,8 @@ const TableBody: React.FC<TableBodyProps> = ({
                 /* ignore */
               }
 
+              const isFocused = focusedCell?.row === virtualRow.index && focusedCell?.col === colIndex;
+
               return (
                 <div
                   key={`${rowKey}-${col.key}`}
@@ -712,6 +948,7 @@ const TableBody: React.FC<TableBodyProps> = ({
                   data-column-key={col.key}
                   data-bt-cell=""
                   data-selected={isSelected || undefined}
+                  {...(isFocused ? { "data-bt-focused": "" } : {})}
                   className={rowCls || undefined}
                   style={{
                     position: "absolute",
@@ -724,6 +961,7 @@ const TableBody: React.FC<TableBodyProps> = ({
                     minHeight: enableDynamicRowHeight
                       ? `${rowHeight}px`
                       : undefined,
+                    ...(enableRowAnimation ? { transition: "top 0.2s ease, opacity 0.2s ease" } : {}),
                   }}
                 >
                   {col.key === "__drag__" && onRowDragStart ? (
@@ -794,6 +1032,13 @@ const TableBody: React.FC<TableBodyProps> = ({
                           }
                           onEditComplete={onEditComplete}
                           cellStyleFn={cellStyleFn}
+                          treeLevel={tLevel}
+                          treeHasChildren={tHasChildren}
+                          treeExpanded={tExpanded}
+                          treeIndentSize={treeIndentSize}
+                          onTreeToggle={onTreeToggle}
+                          treeKey={tKey}
+                          isFirstDataCol={colIndex === firstDataColIndex}
                         />
                       </div>
                     </DynamicRowMeasurer>
@@ -835,6 +1080,13 @@ const TableBody: React.FC<TableBodyProps> = ({
                         }
                         onEditComplete={onEditComplete}
                         cellStyleFn={cellStyleFn}
+                        treeLevel={tLevel}
+                        treeHasChildren={tHasChildren}
+                        treeExpanded={tExpanded}
+                        treeIndentSize={treeIndentSize}
+                        onTreeToggle={onTreeToggle}
+                        treeKey={tKey}
+                        isFirstDataCol={colIndex === firstDataColIndex}
                       />
                     </div>
                   )}
@@ -1060,6 +1312,7 @@ const TableBody: React.FC<TableBodyProps> = ({
                             }
                             onEditComplete={onEditComplete}
                             cellStyleFn={cellStyleFn}
+                            isFirstDataCol={false}
                           />
                         </div>
                       </div>
@@ -1206,6 +1459,7 @@ const TableBody: React.FC<TableBodyProps> = ({
                             }
                             onEditComplete={onEditComplete}
                             cellStyleFn={cellStyleFn}
+                            isFirstDataCol={false}
                           />
                         </div>
                       </div>

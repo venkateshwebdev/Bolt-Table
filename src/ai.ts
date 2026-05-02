@@ -130,6 +130,7 @@ export async function callAI(
   config: BoltTableAIConfig,
   systemPrompt: string,
   userQuery: string,
+  conversationHistory: Array<{ role: "user" | "assistant"; content: string }> = [],
 ): Promise<string> {
   const { provider, apiKey, model, baseUrl, maxTokens = 1024, temperature = 0.1 } = config;
 
@@ -137,6 +138,12 @@ export async function callAI(
     const url = baseUrl
       ? `${baseUrl.replace(/\/$/, "")}/chat/completions`
       : "https://api.openai.com/v1/chat/completions";
+
+    const messages = [
+      { role: "system", content: systemPrompt },
+      ...conversationHistory,
+      { role: "user", content: userQuery },
+    ];
 
     const res = await fetch(url, {
       method: "POST",
@@ -146,10 +153,7 @@ export async function callAI(
       },
       body: JSON.stringify({
         model: model ?? "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userQuery },
-        ],
+        messages,
         max_tokens: maxTokens,
         temperature,
       }),
@@ -180,7 +184,7 @@ export async function callAI(
       body: JSON.stringify({
         model: model ?? "claude-sonnet-4-20250514",
         system: systemPrompt,
-        messages: [{ role: "user", content: userQuery }],
+        messages: [...conversationHistory, { role: "user", content: userQuery }],
         max_tokens: maxTokens,
         temperature,
       }),

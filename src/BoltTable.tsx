@@ -77,7 +77,10 @@ import type {
   ColumnContextMenuItem,
   ColumnPersistenceConfig,
   ColumnType,
+  ConditionalFormatRule,
   DataRecord,
+  RowGroupingConfig,
+  TreeDataConfig,
   ExpandableConfig,
   PaginationType,
   RowPinningConfig,
@@ -103,6 +106,14 @@ interface BoltTableProps<T extends DataRecord = DataRecord> {
 
   /** Primary color for interactive elements (sort indicators, selected rows, checkboxes, etc.). */
   readonly accentColor?: string;
+
+  /**
+   * Color scheme hint for the table.
+   * - `"auto"` (default): inherits from the parent's computed `color-scheme` or the system preference.
+   * - `"dark"`: forces dark mode system colors and form controls.
+   * - `"light"`: forces light mode system colors and form controls.
+   */
+  readonly theme?: "auto" | "dark" | "light";
 
   /** Additional CSS class name applied to the outermost wrapper div. */
   readonly className?: string;
@@ -173,6 +184,12 @@ interface BoltTableProps<T extends DataRecord = DataRecord> {
   /** Called when the user changes sort direction. Provide for server-side sorting. */
   readonly onSortChange?: (columnKey: string, direction: SortDirection) => void;
 
+  /** Enable sorting by multiple columns simultaneously. Hold Shift while clicking sort to add columns. */
+  readonly multiSort?: boolean;
+
+  /** Called when the multi-sort state changes. Receives the full ordered array of active sorts. Only fires when `multiSort` is true. */
+  readonly onMultiSortChange?: (sorts: ReadonlyArray<{ columnKey: string; direction: SortDirection }>) => void;
+
   /** Called when the user applies or clears a column filter. Provide for server-side filtering. */
   readonly onFilterChange?: (filters: Record<string, string>) => void;
 
@@ -187,6 +204,21 @@ interface BoltTableProps<T extends DataRecord = DataRecord> {
 
   /** Custom React node to render when the table has no data and is not loading. */
   readonly emptyRenderer?: React.ReactNode;
+
+  /** Declarative conditional formatting rules. Each rule applies styles/classNames to cells or rows matching a condition. */
+  readonly conditionalFormatting?: ConditionalFormatRule<T>[];
+
+  /** Group rows by a column value, with collapsible headers and optional aggregations. */
+  readonly rowGrouping?: RowGroupingConfig<T>;
+
+  /** Display data as a tree hierarchy. Rows with a `children` array (or custom key) are shown as expandable tree nodes. */
+  readonly treeData?: TreeDataConfig<T>;
+
+  /** Show an advanced filter builder button in the toolbar. Allows building complex multi-condition filters visually. */
+  readonly enableFilterBuilder?: boolean;
+
+  /** Render a detail panel below the table when a row is clicked. Receives the clicked row record and a close function. */
+  readonly masterDetail?: (record: T, close: () => void) => React.ReactNode;
 
   /** Returns a CSS class name for a given row based on its record and index. Useful for Tailwind or any CSS class-based conditional row styling. */
   readonly rowClassName?: (record: T, index: number) => string;
@@ -247,6 +279,9 @@ interface BoltTableProps<T extends DataRecord = DataRecord> {
   /** Extra content rendered in the toolbar between the search bar and the column-settings button. */
   readonly toolbarContent?: React.ReactNode;
 
+  /** Extra content rendered on the right side of the toolbar, after all built-in buttons. */
+  readonly toolbarRight?: React.ReactNode;
+
   /** Label for the column-settings button. Defaults to "Columns". */
   readonly columnSettingsLabel?: React.ReactNode;
 
@@ -271,6 +306,27 @@ interface BoltTableProps<T extends DataRecord = DataRecord> {
   /** Label for the AI button. Defaults to "Ask AI". */
   readonly aiButtonLabel?: React.ReactNode;
 
+  /** Enable smooth CSS transitions on rows when data changes (sort, filter, reorder). Adds `transition: top` on cells. */
+  readonly enableRowAnimation?: boolean;
+
+  /** Show a status bar at the bottom of the table with row counts, selection info, etc. */
+  readonly showStatusBar?: boolean;
+
+  /** Custom renderer for the status bar. Receives `{ totalRows, filteredRows, selectedRows, currentPage, pageSize }`. When omitted, a default status bar is rendered. */
+  readonly statusBarContent?: (info: {
+    totalRows: number;
+    filteredRows: number;
+    selectedRows: number;
+    currentPage: number;
+    pageSize: number;
+  }) => React.ReactNode;
+
+  /** Called when the user clicks the "AI Insights" button. Should return a textual analysis of the data. Falls back to the built-in AI if not provided. */
+  readonly onAIInsights?: (data: T[], columns: ColumnType<T>[]) => Promise<string>;
+
+  /** Called when the user clicks the "AI Chart" button. Should return a React node with a chart visualization. When omitted and `aiConfig` is set, the built-in AI generates SVG chart markup. */
+  readonly onAIChart?: (data: T[], columns: ColumnType<T>[]) => Promise<React.ReactNode>;
+
   /** Enable row drag-and-drop reordering. When true, shows a grip handle on each row. Requires `onRowReorder`. */
   readonly rowDragEnabled?: boolean;
 
@@ -279,6 +335,9 @@ interface BoltTableProps<T extends DataRecord = DataRecord> {
 }
 
 export interface ClassNamesTypes {
+  /** Applied to the outermost wrapper div. */
+  wrapper?: string;
+
   /** Applied to all non-pinned column header cells. */
   header?: string;
 
@@ -303,6 +362,30 @@ export interface ClassNamesTypes {
   /** Applied to each pinned row's wrapper div. */
   pinnedRow?: string;
 
+  /** Applied to the toolbar bar (search + buttons). */
+  toolbar?: string;
+
+  /** Applied to the global search input. */
+  searchInput?: string;
+
+  /** Applied to the status bar at the bottom. */
+  statusBar?: string;
+
+  /** Applied to the filter builder drawer. */
+  filterDrawer?: string;
+
+  /** Applied to the AI input/bar area. */
+  aiBar?: string;
+
+  /** Applied to the master-detail panel below the table. */
+  masterDetailPanel?: string;
+
+  /** Applied to group header rows (row grouping). */
+  groupHeader?: string;
+
+  /** Applied to the empty state container. */
+  emptyState?: string;
+
   /** Applied to the pagination footer wrapper. */
   pagination?: string;
 
@@ -320,6 +403,9 @@ export interface ClassNamesTypes {
 }
 
 export interface StylesTypes {
+  /** Inline styles for the outermost wrapper div. */
+  wrapper?: CSSProperties;
+
   /** Inline styles for all non-pinned column header cells. */
   header?: CSSProperties;
 
@@ -359,6 +445,30 @@ export interface StylesTypes {
   /** Inline styles applied to built-in context menu items (sort, filter, pin, copy, etc.). */
   contextMenuItem?: CSSProperties;
 
+  /** Inline styles for the toolbar bar (search + buttons). */
+  toolbar?: CSSProperties;
+
+  /** Inline styles for the global search input. */
+  searchInput?: CSSProperties;
+
+  /** Inline styles for the status bar at the bottom. */
+  statusBar?: CSSProperties;
+
+  /** Inline styles for the filter builder drawer. */
+  filterDrawer?: CSSProperties;
+
+  /** Inline styles for the AI input/bar area. */
+  aiBar?: CSSProperties;
+
+  /** Inline styles for the master-detail panel below the table. */
+  masterDetailPanel?: CSSProperties;
+
+  /** Inline styles for group header rows (row grouping). */
+  groupHeader?: CSSProperties;
+
+  /** Inline styles for the empty state container. */
+  emptyState?: CSSProperties;
+
   /** Inline styles for the pagination footer wrapper. */
   pagination?: CSSProperties;
 
@@ -388,6 +498,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   expandedRowHeight = 200,
   maxExpandedRowHeight,
   accentColor = "#1890ff",
+  theme = "auto",
   className = "",
   classNames = EMPTY_CLASSNAMES,
   styles = EMPTY_STYLES,
@@ -409,6 +520,8 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   onEndReachedThreshold = 5,
   isLoading = false,
   onSortChange,
+  multiSort = false,
+  onMultiSortChange,
   onFilterChange,
   columnContextMenuItems,
   autoHeight = true,
@@ -416,6 +529,11 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   emptyRenderer,
   rowClassName,
   rowStyle,
+  conditionalFormatting,
+  rowGrouping,
+  treeData,
+  masterDetail,
+  enableFilterBuilder = false,
   disabledFilters,
   onCopy,
   keepPinnedRowsAcrossPages,
@@ -429,6 +547,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   globalSearchValue,
   onGlobalSearchChange,
   toolbarContent,
+  toolbarRight,
   columnSettingsLabel,
   aiMode = false,
   aiConfig,
@@ -436,9 +555,35 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   onAIResponse,
   aiPlaceholder = "Ask AI anything about your data...",
   aiButtonLabel,
+  onAIInsights,
+  onAIChart,
+  enableRowAnimation = false,
+  showStatusBar = false,
+  statusBarContent,
   rowDragEnabled = false,
   onRowReorder,
 }: BoltTableProps<T>) {
+  const wrapperRef = React.useRef<HTMLDivElement>(null);
+
+  const [systemDark, setSystemDark] = React.useState(() =>
+    typeof window !== "undefined" ? window.matchMedia("(prefers-color-scheme: dark)").matches : false,
+  );
+  React.useEffect(() => {
+    if (theme !== "auto") return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    setSystemDark(mq.matches);
+    const h = (e: MediaQueryListEvent) => setSystemDark(e.matches);
+    mq.addEventListener("change", h);
+    return () => mq.removeEventListener("change", h);
+  }, [theme]);
+
+  const isDark = theme === "dark" || (theme === "auto" && systemDark);
+
+  const bt = useMemo(() => {
+    if (isDark) return { color: "#e0e0e0", bg: "#0f0f0f", cardBg: "#181818", border: "#333", inputBg: "#1a1a1a", menuBg: "rgba(28,28,30,0.92)", menuShadow: "0 8px 24px rgba(0,0,0,0.5)" };
+    return { color: "#1a1a2e", bg: "#ffffff", cardBg: "#ffffff", border: "#ddd", inputBg: "#ffffff", menuBg: "rgba(255,255,255,0.95)", menuShadow: "0 8px 24px rgba(0,0,0,0.12)" };
+  }, [isDark]);
+
   const data = useMemo<T[]>(() => {
     if (!Array.isArray(rawData)) return STABLE_EMPTY_DATA as T[];
     const filtered = rawData.filter((item): item is T => item != null);
@@ -505,6 +650,8 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [focusedCell, setFocusedCell] = useState<{ row: number; col: number } | null>(null);
+  const [masterDetailRecord, setMasterDetailRecord] = useState<T | null>(null);
   React.useEffect(() => {
     setMounted(true);
   }, []);
@@ -659,12 +806,134 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   }, [showColumnPicker]);
 
   // ── AI Mode state ──────────────────────────────────────────────────────
+  const aiOnlyToolbar = !!(aiMode && hideGlobalSearch && !showColumnSettings && !toolbarContent);
   const [aiBarOpen, setAiBarOpen] = useState(false);
+  const effectiveAiBarOpen = aiOnlyToolbar || aiBarOpen;
   const [aiQuery, setAiQuery] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState<AIResponse | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
   const aiInputRef = useRef<HTMLInputElement>(null);
+  const [aiConversationHistory, setAiConversationHistory] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
+  const [showAiSuggestions, setShowAiSuggestions] = useState(false);
+  const [aiInsights, setAiInsights] = useState<string | null>(null);
+  const [aiInsightsLoading, setAiInsightsLoading] = useState(false);
+
+  const handleAIInsights = useCallback(async () => {
+    setAiInsightsLoading(true);
+    setAiInsights(null);
+    try {
+      let result: string;
+      if (onAIInsights) {
+        result = await onAIInsights(data as T[], initialColumns as ColumnType<T>[]);
+      } else if (aiConfig) {
+        const sysPrompt = `You are a data analyst. Analyze the provided dataset and give concise insights: trends, outliers, summary statistics, and notable patterns. Reply in plain text, not JSON.
+
+Columns: ${initialColumns.map((c) => `${c.key}${c.dataIndex ? ` (${c.dataIndex})` : ""}`).join(", ")}
+
+Sample data (first 20 rows):
+${JSON.stringify(data.slice(0, 20), null, 2)}
+
+Total rows: ${data.length}`;
+        result = await callAI(aiConfig, sysPrompt, "Analyze this data and provide key insights.");
+      } else {
+        result = "AI insights requires either aiConfig or onAIInsights prop.";
+      }
+      setAiInsights(result);
+    } catch (err) {
+      setAiInsights(`Error: ${err instanceof Error ? err.message : "Failed to generate insights"}`);
+    } finally {
+      setAiInsightsLoading(false);
+    }
+  }, [data, initialColumns, aiConfig, onAIInsights]);
+
+  const [aiChart, setAiChart] = useState<React.ReactNode | null>(null);
+  const [aiChartLoading, setAiChartLoading] = useState(false);
+
+  const handleAIChart = useCallback(async () => {
+    setAiChartLoading(true);
+    setAiChart(null);
+    try {
+      if (onAIChart) {
+        const result = await onAIChart(data as T[], initialColumns as ColumnType<T>[]);
+        setAiChart(result);
+      } else if (aiConfig) {
+        const numericCols = initialColumns.filter((c) => {
+          const sample = data.slice(0, 5).map((r) => (r as DataRecord)[c.dataIndex ?? c.key]);
+          return sample.some((v) => typeof v === "number");
+        });
+
+        if (numericCols.length === 0) {
+          setAiChart(<div style={{ padding: 16, textAlign: "center", color: "GrayText" }}>No numeric columns found for chart generation.</div>);
+          return;
+        }
+
+        const chartCol = numericCols[0];
+        const colKey = chartCol.dataIndex ?? chartCol.key;
+        const values = data.slice(0, 20).map((r) => {
+          const v = (r as DataRecord)[colKey];
+          return typeof v === "number" ? v : 0;
+        });
+        const max = Math.max(...values, 1);
+        const barWidth = Math.floor(400 / values.length);
+
+        setAiChart(
+          <div style={{ padding: 8 }}>
+            <div style={{ fontSize: "0.85em", fontWeight: 600, marginBottom: 8, color: accentColor }}>
+              {typeof chartCol.title === "string" ? chartCol.title : chartCol.key} (first {values.length} rows)
+            </div>
+            <svg width="100%" viewBox={`0 0 ${values.length * barWidth} 120`} style={{ maxWidth: 500 }}>
+              {values.map((v, i) => (
+                <g key={i}>
+                  <rect
+                    x={i * barWidth + 2}
+                    y={120 - (v / max) * 100}
+                    width={barWidth - 4}
+                    height={(v / max) * 100}
+                    fill={accentColor}
+                    opacity={0.7}
+                    rx={2}
+                  />
+                  <text
+                    x={i * barWidth + barWidth / 2}
+                    y={115}
+                    textAnchor="middle"
+                    fontSize={8}
+                    fill="GrayText"
+                  >
+                    {v}
+                  </text>
+                </g>
+              ))}
+            </svg>
+          </div>,
+        );
+      }
+    } catch (err) {
+      setAiChart(<div style={{ padding: 16, color: "#ef4444" }}>Chart generation failed: {err instanceof Error ? err.message : "Unknown error"}</div>);
+    } finally {
+      setAiChartLoading(false);
+    }
+  }, [data, initialColumns, aiConfig, onAIChart, accentColor]);
+
+  const aiSuggestions = useMemo(() => {
+    if (!aiMode) return [];
+    const colNames = initialColumns
+      .filter((c) => !c.key.startsWith("__") && c.dataIndex)
+      .map((c) => ({ key: c.dataIndex ?? c.key, title: typeof c.title === "string" ? c.title : c.key }));
+
+    const suggestions: string[] = [];
+    for (const col of colNames.slice(0, 6)) {
+      suggestions.push(`Show rows where ${col.title} is highest`);
+      suggestions.push(`Filter by ${col.title}`);
+      suggestions.push(`Sort by ${col.title} descending`);
+    }
+    suggestions.push("Highlight rows with missing values");
+    suggestions.push("Show only the top 10 rows");
+    suggestions.push("Remove all filters");
+    suggestions.push("Show all columns");
+    return suggestions;
+  }, [aiMode, initialColumns]);
   const [aiStyleOps, setAiStyleOps] = useState<AIStyleOperation[]>([]);
   const [aiCellStyleOps, setAiCellStyleOps] = useState<AICellStyleOperation[]>(
     [],
@@ -803,8 +1072,14 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
         });
       } else if (aiConfig) {
         const sysPrompt = buildSystemPrompt(initialColumns, data);
-        const raw = await callAI(aiConfig, sysPrompt, query);
+        const raw = await callAI(aiConfig, sysPrompt, query, aiConversationHistory);
         response = parseAIResponse(raw);
+
+        setAiConversationHistory((prev) => [
+          ...prev,
+          { role: "user" as const, content: query },
+          { role: "assistant" as const, content: raw },
+        ]);
       } else {
         throw new Error("AI mode requires either aiConfig or onAIQuery prop");
       }
@@ -876,7 +1151,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     } finally {
       setAiLoading(false);
     }
-  }, [aiQuery, aiConfig, onAIQuery, data, initialColumns, rowKey]);
+  }, [aiQuery, aiConfig, onAIQuery, data, initialColumns, rowKey, aiConversationHistory]);
 
   const handleAIClear = useCallback(() => {
     setAiResult(null);
@@ -887,6 +1162,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     setAiSortKey(null);
     setAiSortDir(null);
     setAiQuery("");
+    setAiConversationHistory([]);
   }, []);
 
   const handleAIBarClose = useCallback(() => {
@@ -895,10 +1171,10 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   }, [handleAIClear]);
 
   React.useEffect(() => {
-    if (aiBarOpen && aiInputRef.current) {
+    if (effectiveAiBarOpen && aiInputRef.current) {
       setTimeout(() => aiInputRef.current?.focus(), 300);
     }
-  }, [aiBarOpen]);
+  }, [effectiveAiBarOpen]);
 
   const columnsWithPersistedWidths = useMemo(
     () =>
@@ -1755,37 +2031,50 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
 
   const onSortChangeRef = useRef(onSortChange);
   onSortChangeRef.current = onSortChange;
+  const onMultiSortChangeRef = useRef(onMultiSortChange);
+  onMultiSortChangeRef.current = onMultiSortChange;
 
-  const [sortState, setSortState] = useState<{
-    key: string;
-    direction: SortDirection;
-  }>({ key: "", direction: null });
+  type SortEntry = { key: string; direction: SortDirection };
+  const [sortState, setSortState] = useState<SortEntry[]>([]);
 
   const handleSort = useCallback(
-    (columnKey: string, direction?: SortDirection) => {
+    (columnKey: string, direction?: SortDirection, additive?: boolean) => {
       setSortState((prev) => {
+        const existingIdx = prev.findIndex((s) => s.key === columnKey);
+        const existing = existingIdx >= 0 ? prev[existingIdx] : null;
+
         let next: SortDirection;
         if (direction !== undefined) {
-          next =
-            prev.key === columnKey && prev.direction === direction
-              ? null
-              : direction;
+          next = existing?.direction === direction ? null : direction;
         } else {
-          next =
-            prev.key !== columnKey
-              ? "asc"
-              : prev.direction === "asc"
-                ? "desc"
-                : prev.direction === "desc"
-                  ? null
-                  : "asc";
+          next = !existing
+            ? "asc"
+            : existing.direction === "asc"
+              ? "desc"
+              : existing.direction === "desc"
+                ? null
+                : "asc";
         }
-        const state = { key: next ? columnKey : "", direction: next };
+
+        let result: SortEntry[];
+
+        if (additive && multiSort) {
+          result = prev.filter((s) => s.key !== columnKey);
+          if (next) result.push({ key: columnKey, direction: next });
+        } else {
+          result = next ? [{ key: columnKey, direction: next }] : [];
+        }
+
         onSortChangeRef.current?.(columnKey, next);
-        return state;
+        if (multiSort) {
+          onMultiSortChangeRef.current?.(
+            result.map((s) => ({ columnKey: s.key, direction: s.direction })),
+          );
+        }
+        return result;
       });
     },
-    [],
+    [multiSort],
   );
 
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>(
@@ -1794,6 +2083,43 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
 
   // Global search state
   const [internalGlobalSearch, setInternalGlobalSearch] = useState("");
+  const [searchHistory, setSearchHistory] = useState<string[]>([]);
+  const [showSearchHistory, setShowSearchHistory] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const addToSearchHistory = useCallback((term: string) => {
+    if (!term.trim()) return;
+    setSearchHistory((prev) => {
+      const filtered = prev.filter((t) => t !== term);
+      return [term, ...filtered].slice(0, 10);
+    });
+  }, []);
+
+  // ── Filter builder state ──
+  type FilterBuilderRow = { id: number; column: string; operator: string; value: string };
+  const [showFilterBuilder, setShowFilterBuilder] = useState(false);
+  const [filterBuilderRows, setFilterBuilderRows] = useState<FilterBuilderRow[]>([
+    { id: 1, column: "", operator: "contains", value: "" },
+  ]);
+  const [filterBuilderLogic, setFilterBuilderLogic] = useState<"and" | "or">("and");
+  const filterBuilderIdRef = useRef(2);
+
+  const applyFilterBuilder = useCallback(() => {
+    const activeRules = filterBuilderRows.filter((r) => r.column && r.value);
+    if (activeRules.length === 0) return;
+
+    const newFilters: Record<string, string> = {};
+    for (const rule of activeRules) {
+      newFilters[rule.column] = `${rule.operator}:${rule.value}`;
+    }
+
+    setColumnFilters((prev) => {
+      const next = { ...prev, ...newFilters };
+      onFilterChange?.(next);
+      return next;
+    });
+    setShowFilterBuilder(false);
+  }, [filterBuilderRows, onFilterChange]);
 
   const handleColumnFilter = useCallback(
     (columnKey: string, value: string) => {
@@ -1854,8 +2180,46 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                   col.dataIndex ?? key,
                 );
               }
+              const filterVal = columnFilters[key];
+              if (col?.filterType === "dateRange" && filterVal.includes("..")) {
+                const [from, to] = filterVal.split("..");
+                const cellDate = String(row[col.dataIndex ?? key] ?? "");
+                if (from && cellDate < from) return false;
+                if (to && cellDate > to) return false;
+                return true;
+              }
+              if (col?.filterType === "numberRange" && filterVal.includes("..")) {
+                const [minS, maxS] = filterVal.split("..");
+                const num = Number(row[col.dataIndex ?? key]);
+                if (Number.isNaN(num)) return false;
+                if (minS && num < Number(minS)) return false;
+                if (maxS && num > Number(maxS)) return false;
+                return true;
+              }
+              const opMatch = filterVal.match(/^(eq|neq|gt|gte|lt|lte|contains|startsWith|endsWith):(.*)$/);
+              if (opMatch) {
+                const op = opMatch[1];
+                const opVal = opMatch[2];
+                const cellRaw = row[col?.dataIndex ?? key];
+                const cellStr = String(cellRaw ?? "").toLowerCase();
+                const opValLower = opVal.toLowerCase();
+                const numCell = Number(cellRaw);
+                const numOp = Number(opVal);
+                switch (op) {
+                  case "eq": return cellStr === opValLower;
+                  case "neq": return cellStr !== opValLower;
+                  case "gt": return !Number.isNaN(numCell) && !Number.isNaN(numOp) && numCell > numOp;
+                  case "gte": return !Number.isNaN(numCell) && !Number.isNaN(numOp) && numCell >= numOp;
+                  case "lt": return !Number.isNaN(numCell) && !Number.isNaN(numOp) && numCell < numOp;
+                  case "lte": return !Number.isNaN(numCell) && !Number.isNaN(numOp) && numCell <= numOp;
+                  case "contains": return cellStr.includes(opValLower);
+                  case "startsWith": return cellStr.startsWith(opValLower);
+                  case "endsWith": return cellStr.endsWith(opValLower);
+                  default: return true;
+                }
+              }
               const cellVal = String(row[key] ?? "").toLowerCase();
-              return cellVal.includes(columnFilters[key].toLowerCase());
+              return cellVal.includes(filterVal.toLowerCase());
             } catch {
               return true;
             }
@@ -1864,37 +2228,38 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
       }
     }
 
-    if (!onSortChangeRef.current && sortState.key && sortState.direction) {
-      const dir = sortState.direction === "asc" ? 1 : -1;
-      const key = sortState.key;
-      const col = columnsLookupRef.current.find((c) => c.key === key);
-
-      try {
-        if (typeof col?.sorter === "function") {
-          const sorterFn = col.sorter;
+    if (!onSortChangeRef.current && sortState.length > 0) {
+      const activeSorts = sortState.filter((s) => s.key && s.direction);
+      if (activeSorts.length > 0) {
+        try {
           result = [...result].sort((a, b) => {
             if (a == null && b == null) return 0;
             if (a == null) return 1;
             if (b == null) return -1;
-            return sorterFn(a, b) * dir;
+            for (const { key, direction } of activeSorts) {
+              const dir = direction === "asc" ? 1 : -1;
+              const col = columnsLookupRef.current.find((c) => c.key === key);
+              let cmp = 0;
+              if (typeof col?.sorter === "function") {
+                cmp = col.sorter(a, b) * dir;
+              } else {
+                const aVal = (a as DataRecord)[key];
+                const bVal = (b as DataRecord)[key];
+                if (aVal == null && bVal != null) cmp = 1;
+                else if (aVal != null && bVal == null) cmp = -1;
+                else if (aVal != null && bVal != null) {
+                  if (typeof aVal === "number" && typeof bVal === "number")
+                    cmp = (aVal - bVal) * dir;
+                  else cmp = String(aVal).localeCompare(String(bVal)) * dir;
+                }
+              }
+              if (cmp !== 0) return cmp;
+            }
+            return 0;
           });
-        } else {
-          result = [...result].sort((a, b) => {
-            if (a == null && b == null) return 0;
-            if (a == null) return 1;
-            if (b == null) return -1;
-            const aVal = a[key];
-            const bVal = b[key];
-            if (aVal == null && bVal == null) return 0;
-            if (aVal == null) return 1;
-            if (bVal == null) return -1;
-            if (typeof aVal === "number" && typeof bVal === "number")
-              return (aVal - bVal) * dir;
-            return String(aVal).localeCompare(String(bVal)) * dir;
-          });
+        } catch {
+          // If sort comparator throws, return unsorted data
         }
-      } catch {
-        // If sort comparator throws, return unsorted data
       }
     }
 
@@ -1938,6 +2303,170 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     return result;
   }, [processedData, aiFilteredDataKeys, aiSortKey, aiSortDir, rowKey]);
 
+  // ── Row grouping ─────────────────────────────────────────────────────────
+  const [internalCollapsedGroups, setInternalCollapsedGroups] = useState<Set<string>>(() =>
+    rowGrouping?.defaultCollapsed ? new Set(["__all_collapsed__"]) : new Set(),
+  );
+
+  const resolvedCollapsedGroups = rowGrouping?.collapsedGroups ?? internalCollapsedGroups;
+
+  const toggleGroup = useCallback(
+    (groupKey: string) => {
+      const next = !resolvedCollapsedGroups.has(groupKey);
+      if (rowGrouping?.onGroupToggle) {
+        rowGrouping.onGroupToggle(groupKey, next);
+      } else {
+        setInternalCollapsedGroups((prev) => {
+          const s = new Set(prev);
+          s.delete("__all_collapsed__");
+          if (next) s.add(groupKey);
+          else s.delete(groupKey);
+          return s;
+        });
+      }
+    },
+    [resolvedCollapsedGroups, rowGrouping],
+  );
+
+  const computeAggregate = useCallback(
+    (values: unknown[], fn: import("./types").AggregateFunction): unknown => {
+      if (typeof fn === "function") return fn(values);
+      const nums = values.filter((v): v is number => typeof v === "number");
+      switch (fn) {
+        case "count": return values.length;
+        case "sum": return nums.reduce((a, b) => a + b, 0);
+        case "avg": return nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : 0;
+        case "min": return nums.length ? Math.min(...nums) : undefined;
+        case "max": return nums.length ? Math.max(...nums) : undefined;
+        default: return undefined;
+      }
+    },
+    [],
+  );
+
+  const groupedData = useMemo(() => {
+    if (!rowGrouping?.groupBy) return aiProcessedData;
+
+    const groupByKey = rowGrouping.groupBy;
+    const groups = new Map<string, T[]>();
+    const groupOrder: string[] = [];
+
+    for (const row of aiProcessedData) {
+      if (row == null) continue;
+      const gv = String((row as DataRecord)[groupByKey] ?? "");
+      if (!groups.has(gv)) {
+        groups.set(gv, []);
+        groupOrder.push(gv);
+      }
+      groups.get(gv)!.push(row);
+    }
+
+    const allCollapsed = resolvedCollapsedGroups.has("__all_collapsed__") && rowGrouping.defaultCollapsed;
+
+    const result: T[] = [];
+    for (const gk of groupOrder) {
+      const rows = groups.get(gk)!;
+      const collapsed = allCollapsed || resolvedCollapsedGroups.has(gk);
+
+      const aggregates: Record<string, unknown> = {};
+      if (rowGrouping.aggregations) {
+        for (const [colKey, fn] of Object.entries(rowGrouping.aggregations)) {
+          const vals = rows.map((r) => (r as DataRecord)[colKey]);
+          aggregates[colKey] = computeAggregate(vals, fn);
+        }
+      }
+
+      const headerRow = {
+        __bt_group_header__: true,
+        __bt_group_key__: gk,
+        __bt_group_value__: (rows[0] as DataRecord)?.[groupByKey],
+        __bt_group_count__: rows.length,
+        __bt_group_collapsed__: collapsed,
+        __bt_group_aggregates__: aggregates,
+        __bt_group_rows__: rows,
+      } as unknown as T;
+
+      result.push(headerRow);
+      if (!collapsed) {
+        result.push(...rows);
+      }
+    }
+    return result;
+  }, [aiProcessedData, rowGrouping, resolvedCollapsedGroups, computeAggregate]);
+
+  // ── Tree data flattening ─────────────────────────────────────────────────
+  const [internalTreeExpanded, setInternalTreeExpanded] = useState<Set<React.Key>>(() => {
+    if (!treeData) return new Set();
+    if (treeData.defaultExpandAll) return new Set(["__tree_expand_all__"]);
+    return new Set(treeData.defaultExpandedKeys ?? []);
+  });
+
+  const resolvedTreeExpanded = useMemo(() => {
+    if (treeData?.expandedKeys) return new Set(treeData.expandedKeys);
+    return internalTreeExpanded;
+  }, [treeData?.expandedKeys, internalTreeExpanded]);
+
+  const toggleTreeNode = useCallback(
+    (key: React.Key) => {
+      const wasExpanded = resolvedTreeExpanded.has(key);
+      if (treeData?.onExpandChange) {
+        const next = wasExpanded
+          ? [...resolvedTreeExpanded].filter((k) => k !== key && k !== "__tree_expand_all__")
+          : [...resolvedTreeExpanded, key].filter((k) => k !== "__tree_expand_all__");
+        treeData.onExpandChange(next as React.Key[]);
+      } else {
+        setInternalTreeExpanded((prev) => {
+          const s = new Set(prev);
+          s.delete("__tree_expand_all__");
+          if (wasExpanded) s.delete(key);
+          else s.add(key);
+          return s;
+        });
+      }
+    },
+    [resolvedTreeExpanded, treeData],
+  );
+
+  const treeProcessedData = useMemo(() => {
+    if (!treeData) return groupedData;
+
+    const childrenKey = treeData.childrenKey ?? "children";
+    const expandAll = resolvedTreeExpanded.has("__tree_expand_all__");
+    const flat: T[] = [];
+
+    const walk = (rows: T[], level: number) => {
+      for (const row of rows) {
+        if (row == null) continue;
+        const rec = row as DataRecord;
+        const children = rec[childrenKey] as T[] | undefined;
+        const hasChildren = Array.isArray(children) && children.length > 0;
+
+        const key = typeof rowKey === "function"
+          ? (rowKey as (r: T) => string)(row)
+          : String(rec[typeof rowKey === "string" ? rowKey : "id"] ?? flat.length);
+
+        const isExpanded = expandAll || resolvedTreeExpanded.has(key);
+
+        const annotated = {
+          ...rec,
+          __bt_tree_level__: level,
+          __bt_tree_has_children__: hasChildren,
+          __bt_tree_expanded__: isExpanded,
+          __bt_tree_key__: key,
+        } as unknown as T;
+
+        flat.push(annotated);
+
+        if (hasChildren && isExpanded) {
+          walk(children, level + 1);
+        }
+      }
+    };
+
+    walk(groupedData, 0);
+    return flat;
+  }, [groupedData, treeData, resolvedTreeExpanded, rowKey]);
+
   const getAIRowStyleForRecord = useCallback(
     (record: T): React.CSSProperties | undefined => {
       if (aiStyleOps.length === 0) return undefined;
@@ -1954,6 +2483,66 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     [aiCellStyleOps],
   );
 
+  // ── Conditional formatting helpers ───────────────────────────────────────
+  const cfRowRules = useMemo(
+    () => (conditionalFormatting ?? []).filter((r) => r.applyToRow),
+    [conditionalFormatting],
+  );
+  const cfCellRules = useMemo(
+    () => (conditionalFormatting ?? []).filter((r) => !r.applyToRow),
+    [conditionalFormatting],
+  );
+
+  const getCFRowStyle = useCallback(
+    (record: T): React.CSSProperties | undefined => {
+      if (cfRowRules.length === 0) return undefined;
+      let merged: React.CSSProperties | undefined;
+      for (const rule of cfRowRules) {
+        try {
+          if (rule.condition(undefined, record, "")) {
+            merged = merged ? { ...merged, ...rule.style } : { ...rule.style };
+          }
+        } catch { /* skip bad rule */ }
+      }
+      return merged;
+    },
+    [cfRowRules],
+  );
+
+  const getCFRowClassName = useCallback(
+    (record: T): string => {
+      if (cfRowRules.length === 0) return "";
+      const classes: string[] = [];
+      for (const rule of cfRowRules) {
+        try {
+          if (rule.className && rule.condition(undefined, record, "")) {
+            classes.push(rule.className);
+          }
+        } catch { /* skip bad rule */ }
+      }
+      return classes.join(" ");
+    },
+    [cfRowRules],
+  );
+
+  const getCFCellStyle = useCallback(
+    (record: T, columnKey: string): React.CSSProperties | undefined => {
+      if (cfCellRules.length === 0) return undefined;
+      let merged: React.CSSProperties | undefined;
+      for (const rule of cfCellRules) {
+        if (rule.columns && rule.columns.length > 0 && !rule.columns.includes(columnKey)) continue;
+        try {
+          const value = (record as DataRecord)[columnKey];
+          if (rule.condition(value, record, columnKey)) {
+            merged = merged ? { ...merged, ...rule.style } : { ...rule.style };
+          }
+        } catch { /* skip bad rule */ }
+      }
+      return merged;
+    },
+    [cfCellRules],
+  );
+
   const pinnedRowCacheRef = useRef<Map<string, T>>(new Map());
 
   const { pinnedTopRows, pinnedBottomRows, unpinnedProcessedData } =
@@ -1966,7 +2555,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
         return {
           pinnedTopRows: [] as T[],
           pinnedBottomRows: [] as T[],
-          unpinnedProcessedData: aiProcessedData,
+          unpinnedProcessedData: treeProcessedData,
         };
       }
 
@@ -1979,7 +2568,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
       const bottomMap = new Map<string, T>();
       const rest: T[] = [];
 
-      aiProcessedData.forEach((row, idx) => {
+      treeProcessedData.forEach((row, idx) => {
         if (row == null) return;
         const key = getSafeRowKey(row as T, idx);
         if (topKeySet.has(key)) {
@@ -2027,7 +2616,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
         unpinnedProcessedData: rest,
       };
     }, [
-      aiProcessedData,
+      treeProcessedData,
       resolvedRowPinning,
       getSafeRowKey,
       keepPinnedRowsAcrossPages,
@@ -2134,7 +2723,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   }, [unpinnedProcessedData, needsClientPagination, pgCurrent, pgSize]);
 
   const shimmerCount = pgEnabled ? pgSize : 15;
-  const showShimmer = isLoading && aiProcessedData.length === 0;
+  const showShimmer = isLoading && treeProcessedData.length === 0;
   const shimmerRowKeyField = typeof rowKey === "string" ? rowKey : "id";
   const shimmerData = useMemo(() => {
     if (!showShimmer) return null;
@@ -2441,15 +3030,33 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     ? emptyMinHeight
     : Math.min(naturalContentHeight, maxAutoHeight);
 
+  React.useEffect(() => {
+    if (!focusedCell) return;
+    const el = tableAreaRef.current;
+    if (!el) return;
+    const cell = el.querySelector<HTMLElement>(
+      `[data-bt-focused]`,
+    );
+    cell?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [focusedCell]);
+
   return (
     <>
       <div
-        className={className}
+        ref={wrapperRef}
+        className={`${className ?? ""} ${classNames.wrapper ?? ""}`}
         style={{
           display: "flex",
           width: "100%",
           flexDirection: "column",
+          fontSize: "inherit",
+          fontWeight: 400,
+          color: bt.color,
+          background: bt.bg,
+          colorScheme: isDark ? "dark" : "light",
+          position: "relative",
           ...(autoHeight ? { maxHeight: "100%" } : { height: "100%" }),
+          ...styles.wrapper,
         }}
       >
         <style>{`
@@ -2462,8 +3069,10 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
             backdrop-filter: blur(8px);
             -webkit-backdrop-filter: blur(8px);
           }
-          :where([data-bt-pinned]) {
-            background-color: ${styles.pinnedBg ?? "Canvas"};
+          :where([data-bt-pinned]:not([data-bt-header])) {
+            background-color: ${styles.pinnedBg ?? "rgba(128,128,128,0.06)"};
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
           }
           [data-row-key][data-hover] > div {
             background-color: ${styles.rowHover?.backgroundColor ?? "rgba(128, 128, 128, 0.1)"};
@@ -2492,7 +3101,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
           [data-bt-header][data-drag-over] {
             border: 1px dashed ${accentColor} !important;
           }
-          ${onRowClick ? "[data-bt-cell] { cursor: pointer; }" : ""}
+          ${onRowClick || masterDetail ? "[data-bt-cell] { cursor: pointer; }" : ""}
           [data-row-drag-over] {
             box-shadow: 0 -2px 0 0 ${accentColor} inset;
           }
@@ -2504,16 +3113,96 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
           [data-bt-row-grip]:hover {
             opacity: 0.8;
           }
+          @keyframes bt-drawer-in {
+            from { transform: translateX(100%); }
+            to { transform: translateX(0); }
+          }
           @keyframes bt-spin { to { transform: rotate(360deg); } }
           @keyframes bt-ai-shimmer {
             0% { background-position: -200% 0; }
             100% { background-position: 200% 0; }
+          }
+          [data-bt-focused] {
+            outline: 2px solid ${accentColor};
+            outline-offset: -2px;
+            z-index: 12 !important;
+          }
+          [data-bt-check] {
+            appearance: none;
+            -webkit-appearance: none;
+            width: 15px;
+            height: 15px;
+            border: 1.5px solid rgba(128,128,128,0.4);
+            border-radius: 3px;
+            background: transparent;
+            cursor: pointer;
+            position: relative;
+            flex-shrink: 0;
+            margin: 0;
+            vertical-align: middle;
+          }
+          [data-bt-check]:checked {
+            background: ${accentColor};
+            border-color: ${accentColor};
+          }
+          [data-bt-check]:checked::after {
+            content: '';
+            position: absolute;
+            left: 4px;
+            top: 1px;
+            width: 5px;
+            height: 9px;
+            border: solid #fff;
+            border-width: 0 2px 2px 0;
+            transform: rotate(45deg);
+          }
+          [data-bt-check]:indeterminate {
+            background: ${accentColor};
+            border-color: ${accentColor};
+          }
+          [data-bt-check]:indeterminate::after {
+            content: '';
+            position: absolute;
+            left: 2px;
+            top: 6px;
+            width: 9px;
+            height: 0;
+            border: solid #fff;
+            border-width: 0 0 2px 0;
+          }
+          [data-bt-check]:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+          }
+        `}</style>
+        <style>{`
+          [data-bt-scroll]::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+          }
+          [data-bt-scroll]::-webkit-scrollbar-track {
+            background: transparent;
+          }
+          [data-bt-scroll]::-webkit-scrollbar-thumb {
+            background: rgba(128,128,128,0.3);
+            border-radius: 3px;
+          }
+          [data-bt-scroll]::-webkit-scrollbar-thumb:hover {
+            background: rgba(128,128,128,0.5);
+          }
+          [data-bt-scroll]::-webkit-scrollbar-corner {
+            background: transparent;
+          }
+          [data-bt-scroll] {
+            scrollbar-width: thin;
+            scrollbar-color: rgba(128,128,128,0.3) transparent;
           }
         `}</style>
 
         {/* Toolbar: Global Search + Column Picker + AI */}
         {(!hideGlobalSearch || showColumnSettings || aiMode) && (
           <div
+            className={classNames.toolbar ?? ""}
             style={{
               position: "relative",
               display: "flex",
@@ -2521,9 +3210,10 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
               gap: 8,
               padding: "6px 8px",
               borderBottom: "1px solid rgba(128,128,128,0.2)",
-              fontSize: 12,
+              fontSize: "inherit",
               flexShrink: 0,
               zIndex: 20,
+              ...styles.toolbar,
             }}
           >
             {/* ── Normal toolbar items ── */}
@@ -2533,10 +3223,10 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                 alignItems: "center",
                 gap: 8,
                 flex: "1 1 0%",
-                opacity: aiBarOpen ? 0 : 1,
-                transform: aiBarOpen ? "scale(0.97)" : "scale(1)",
+                opacity: effectiveAiBarOpen ? 0 : 1,
+                transform: effectiveAiBarOpen ? "scale(0.97)" : "scale(1)",
                 transition: "opacity 0.25s ease, transform 0.25s ease",
-                pointerEvents: aiBarOpen ? "none" : "auto",
+                pointerEvents: effectiveAiBarOpen ? "none" : "auto",
                 minWidth: 0,
               }}
             >
@@ -2562,6 +3252,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                     )}
                   </span>
                   <input
+                    ref={searchInputRef}
                     type="text"
                     placeholder="Search all columns..."
                     value={globalSearchValue ?? internalGlobalSearch}
@@ -2570,6 +3261,19 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                       if (onGlobalSearchChange) onGlobalSearchChange(v);
                       else setInternalGlobalSearch(v);
                     }}
+                    onFocus={() => {
+                      if (searchHistory.length > 0) setShowSearchHistory(true);
+                    }}
+                    onBlur={() => {
+                      setTimeout(() => setShowSearchHistory(false), 150);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        addToSearchHistory((globalSearchValue ?? internalGlobalSearch) || "");
+                        setShowSearchHistory(false);
+                      }
+                    }}
+                    className={classNames.searchInput ?? ""}
                     style={{
                       flex: "1 1 0%",
                       border: "none",
@@ -2579,8 +3283,59 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                       color: "inherit",
                       padding: "4px 6px",
                       minWidth: 0,
+                      ...styles.searchInput,
                     }}
                   />
+                  {showSearchHistory && searchHistory.length > 0 && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: "100%",
+                        left: 0,
+                        right: 0,
+                        zIndex: 99999,
+                        borderRadius: 6,
+                        border: "1px solid rgba(128,128,128,0.2)",
+                        boxShadow: bt.menuShadow,
+                        backdropFilter: "blur(16px)",
+                        WebkitBackdropFilter: "blur(16px)",
+                        backgroundColor: bt.menuBg,
+                        padding: "4px 0",
+                        marginTop: 2,
+                        maxHeight: 200,
+                        overflowY: "auto",
+                      }}
+                    >
+                      <div style={{ padding: "4px 10px", fontSize: "0.75em", opacity: 0.5, fontWeight: 600 }}>Recent</div>
+                      {searchHistory.map((term, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          style={{
+                            display: "block",
+                            width: "100%",
+                            textAlign: "left",
+                            background: "none",
+                            border: "none",
+                            cursor: "pointer",
+                            padding: "5px 10px",
+                            fontSize: "inherit",
+                            color: "inherit",
+                          }}
+                          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "rgba(128,128,128,0.15)"; }}
+                          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "transparent"; }}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            if (onGlobalSearchChange) onGlobalSearchChange(term);
+                            else setInternalGlobalSearch(term);
+                            setShowSearchHistory(false);
+                          }}
+                        >
+                          {term}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   {(globalSearchValue ?? internalGlobalSearch) && (
                     <button
                       type="button"
@@ -2624,7 +3379,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                       padding: "4px 6px",
                       color: "inherit",
                       gap: 4,
-                      fontSize: 12,
+                      fontSize: "inherit",
                     }}
                     title="Column settings"
                   >
@@ -2646,10 +3401,10 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                         overflowY: "auto",
                         borderRadius: 8,
                         border: "1px solid rgba(128,128,128,0.2)",
-                        boxShadow: "0 4px 24px rgba(0,0,0,0.12)",
+                        boxShadow: bt.menuShadow,
                         backdropFilter: "blur(16px)",
                         WebkitBackdropFilter: "blur(16px)",
-                        backgroundColor: "rgba(128,128,128,0.08)",
+                        backgroundColor: bt.menuBg,
                         padding: "4px 0",
                         marginTop: 4,
                       }}
@@ -2675,7 +3430,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                                 padding: "6px 12px",
                                 cursor: isPinned ? "not-allowed" : "pointer",
                                 opacity: isPinned ? 0.5 : 1,
-                                fontSize: 12,
+                                fontSize: "inherit",
                               }}
                             >
                               <input
@@ -2711,8 +3466,33 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                   )}
                 </div>
               )}
-              {/* ── Saved AI Filters dropdown ── */}
-              {aiMode && savedAIFilters.length > 0 && (
+              {/* ── Filter builder toggle ── */}
+              {enableFilterBuilder && (
+                <button
+                  type="button"
+                  onClick={() => setShowFilterBuilder((p) => !p)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 4,
+                    background: showFilterBuilder ? `${accentColor}15` : "none",
+                    border: `1px solid ${showFilterBuilder ? accentColor + "40" : "rgba(128,128,128,0.2)"}`,
+                    borderRadius: 4,
+                    cursor: "pointer",
+                    padding: "4px 6px",
+                    color: showFilterBuilder ? accentColor : "inherit",
+                    flexShrink: 0,
+                    fontSize: "inherit",
+                  }}
+                  title="Advanced filter builder"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                  <span>Filters</span>
+                </button>
+              )}
+              {/* ── Saved AI Filters dropdown (in normal toolbar, not when aiOnlyToolbar) ── */}
+              {aiMode && !aiOnlyToolbar && savedAIFilters.length > 0 && (
                 <div ref={savedFiltersRef} style={{ position: "relative", flexShrink: 0 }}>
                   <button
                     type="button"
@@ -2727,7 +3507,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                       cursor: "pointer",
                       padding: "4px 6px",
                       color: "inherit",
-                      fontSize: 12,
+                      fontSize: "inherit",
                     }}
                     title="Saved AI filters"
                   >
@@ -2747,15 +3527,15 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                         overflowY: "auto",
                         borderRadius: 8,
                         border: "1px solid rgba(128,128,128,0.2)",
-                        boxShadow: "0 4px 24px rgba(0,0,0,0.12)",
+                        boxShadow: bt.menuShadow,
                         backdropFilter: "blur(16px)",
                         WebkitBackdropFilter: "blur(16px)",
-                        backgroundColor: "rgba(128,128,128,0.08)",
+                        backgroundColor: bt.menuBg,
                         padding: "4px 0",
                         marginTop: 4,
                       }}
                     >
-                      <div style={{ padding: "6px 12px", fontSize: 11, opacity: 0.5, fontWeight: 600 }}>
+                      <div style={{ padding: "6px 12px", fontSize: "0.85em", opacity: 0.5, fontWeight: 600 }}>
                         Saved Filters
                       </div>
                       {savedAIFilters.map((f, i) => (
@@ -2767,7 +3547,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                             gap: 6,
                             padding: "6px 12px",
                             cursor: "pointer",
-                            fontSize: 12,
+                            fontSize: "inherit",
                           }}
                           onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "rgba(128,128,128,0.15)"; }}
                           onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "transparent"; }}
@@ -2817,7 +3597,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                     cursor: "pointer",
                     padding: "4px 8px",
                     color: accentColor,
-                    fontSize: 12,
+                    fontSize: "inherit",
                     fontWeight: 500,
                     flexShrink: 0,
                     transition: "all 0.2s ease",
@@ -2830,11 +3610,63 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                   <span>{aiButtonLabel ?? "Ask AI"}</span>
                 </button>
               )}
+              {aiMode && (aiConfig || onAIInsights) && (
+                <button
+                  type="button"
+                  onClick={handleAIInsights}
+                  disabled={aiInsightsLoading}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    background: "none",
+                    border: "1px solid rgba(128,128,128,0.2)",
+                    borderRadius: 4,
+                    cursor: aiInsightsLoading ? "wait" : "pointer",
+                    padding: "4px 8px",
+                    color: "inherit",
+                    fontSize: "inherit",
+                    flexShrink: 0,
+                    opacity: aiInsightsLoading ? 0.6 : 1,
+                  }}
+                  title="AI Data Insights"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/><path d="M22 4v16"/></svg>
+                  <span>{aiInsightsLoading ? "Analyzing..." : "Insights"}</span>
+                </button>
+              )}
+              {aiMode && (aiConfig || onAIChart) && (
+                <button
+                  type="button"
+                  onClick={handleAIChart}
+                  disabled={aiChartLoading}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    background: "none",
+                    border: "1px solid rgba(128,128,128,0.2)",
+                    borderRadius: 4,
+                    cursor: aiChartLoading ? "wait" : "pointer",
+                    padding: "4px 8px",
+                    color: "inherit",
+                    fontSize: "inherit",
+                    flexShrink: 0,
+                    opacity: aiChartLoading ? 0.6 : 1,
+                  }}
+                  title="AI Chart"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>
+                  <span>{aiChartLoading ? "Generating..." : "Chart"}</span>
+                </button>
+              )}
+              {toolbarRight}
             </div>
 
             {/* ── AI search bar overlay ── */}
             {aiMode && (
               <div
+                className={classNames.aiBar ?? ""}
                 style={{
                   position: "absolute",
                   inset: 0,
@@ -2842,17 +3674,18 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                   alignItems: "center",
                   gap: 8,
                   padding: "4px 8px",
-                  opacity: aiBarOpen ? 1 : 0,
-                  transform: aiBarOpen
+                  opacity: effectiveAiBarOpen ? 1 : 0,
+                  transform: effectiveAiBarOpen
                     ? "translateX(0)"
                     : "translateX(40px)",
                   transition:
                     "opacity 0.3s cubic-bezier(0.4,0,0.2,1), transform 0.3s cubic-bezier(0.4,0,0.2,1)",
-                  pointerEvents: aiBarOpen ? "auto" : "none",
+                  pointerEvents: effectiveAiBarOpen ? "auto" : "none",
                   zIndex: 2,
                   background: "inherit",
                   backdropFilter: "blur(12px)",
                   WebkitBackdropFilter: "blur(12px)",
+                  ...styles.aiBar,
                 }}
               >
                 <span
@@ -2871,11 +3704,17 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                   type="text"
                   placeholder={aiPlaceholder}
                   value={aiQuery}
-                  onChange={(e) => setAiQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !aiLoading) handleAISubmit();
-                    if (e.key === "Escape") handleAIBarClose();
+                  onChange={(e) => {
+                    setAiQuery(e.target.value);
+                    setShowAiSuggestions(!!e.target.value.trim());
                   }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !aiLoading) { handleAISubmit(); setShowAiSuggestions(false); }
+                    if (e.key === "Escape" && !aiOnlyToolbar) handleAIBarClose();
+                    if (e.key === "Escape") setShowAiSuggestions(false);
+                  }}
+                  onFocus={() => { if (aiQuery.trim() || !aiQuery) setShowAiSuggestions(true); }}
+                  onBlur={() => { setTimeout(() => setShowAiSuggestions(false), 150); }}
                   disabled={aiLoading}
                   style={{
                     flex: "1 1 0%",
@@ -2886,9 +3725,151 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                     color: "inherit",
                     padding: "4px 6px",
                     minWidth: 0,
-                    fontSize: 12,
+                    fontSize: "inherit",
                   }}
                 />
+                {showAiSuggestions && aiSuggestions.length > 0 && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "100%",
+                      left: 0,
+                      right: 0,
+                      zIndex: 99999,
+                      borderRadius: 6,
+                      border: "1px solid rgba(128,128,128,0.2)",
+                      boxShadow: bt.menuShadow,
+                      backdropFilter: "blur(16px)",
+                      WebkitBackdropFilter: "blur(16px)",
+                      backgroundColor: bt.menuBg,
+                      padding: "4px 0",
+                      marginTop: 4,
+                      maxHeight: 180,
+                      overflowY: "auto",
+                    }}
+                  >
+                    <div style={{ padding: "4px 10px", fontSize: "0.75em", opacity: 0.5, fontWeight: 600 }}>Suggestions</div>
+                    {aiSuggestions
+                      .filter((s) => !aiQuery.trim() || s.toLowerCase().includes(aiQuery.toLowerCase()))
+                      .slice(0, 6)
+                      .map((suggestion, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          style={{
+                            display: "block",
+                            width: "100%",
+                            textAlign: "left",
+                            background: "none",
+                            border: "none",
+                            cursor: "pointer",
+                            padding: "5px 10px",
+                            fontSize: "0.85em",
+                            color: "inherit",
+                          }}
+                          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "rgba(128,128,128,0.15)"; }}
+                          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "transparent"; }}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            setAiQuery(suggestion);
+                            setShowAiSuggestions(false);
+                          }}
+                        >
+                          {suggestion}
+                        </button>
+                      ))}
+                  </div>
+                )}
+                {/* Saved AI Filters (inline in AI bar when aiOnlyToolbar) */}
+                {aiOnlyToolbar && savedAIFilters.length > 0 && (
+                  <div ref={savedFiltersRef} style={{ position: "relative", flexShrink: 0 }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowSavedFilters((p) => !p)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                        background: "none",
+                        border: "1px solid rgba(128,128,128,0.2)",
+                        borderRadius: 4,
+                        cursor: "pointer",
+                        padding: "4px 6px",
+                        color: "inherit",
+                        fontSize: "inherit",
+                      }}
+                      title="Saved AI filters"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                      <span>{savedAIFilters.length}</span>
+                    </button>
+                    {showSavedFilters && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: "100%",
+                          right: 0,
+                          zIndex: 99999,
+                          minWidth: 240,
+                          maxWidth: 360,
+                          maxHeight: 320,
+                          overflowY: "auto",
+                          borderRadius: 8,
+                          border: "1px solid rgba(128,128,128,0.2)",
+                          boxShadow: bt.menuShadow,
+                          backdropFilter: "blur(16px)",
+                          WebkitBackdropFilter: "blur(16px)",
+                          backgroundColor: bt.menuBg,
+                          padding: "4px 0",
+                          marginTop: 4,
+                        }}
+                      >
+                        <div style={{ padding: "6px 12px", fontSize: "0.85em", opacity: 0.5, fontWeight: 600 }}>
+                          Saved Filters
+                        </div>
+                        {savedAIFilters.map((f, i) => (
+                          <div
+                            key={i}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 6,
+                              padding: "6px 12px",
+                              cursor: "pointer",
+                              fontSize: "inherit",
+                            }}
+                            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "rgba(128,128,128,0.15)"; }}
+                            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "transparent"; }}
+                          >
+                            <span
+                              style={{ flex: "1 1 0%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                              onClick={() => applySavedFilter(f)}
+                            >
+                              {f.label}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); removeSavedFilter(i); }}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                background: "none",
+                                border: "none",
+                                cursor: "pointer",
+                                padding: 2,
+                                color: "GrayText",
+                                flexShrink: 0,
+                              }}
+                              title="Remove"
+                            >
+                              {icons?.close ?? <XIcon style={{ width: 10, height: 10 }} />}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
                 {/* Send / Loading button */}
                 <button
                   type="button"
@@ -2912,7 +3893,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                     transition: "all 0.2s ease",
                     flexShrink: 0,
                     gap: 4,
-                    fontSize: 12,
+                    fontSize: "inherit",
                     opacity: aiLoading ? 0.7 : 1,
                   }}
                   title="Send"
@@ -2937,29 +3918,389 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                     </>
                   )}
                 </button>
-                {/* Close AI bar */}
-                <button
-                  type="button"
-                  onClick={handleAIBarClose}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                    padding: 2,
-                    color: "GrayText",
-                    flexShrink: 0,
-                  }}
-                  title="Close AI"
-                >
-                  {icons?.close ?? (
-                    <XIcon style={{ width: 14, height: 14 }} />
-                  )}
-                </button>
+                {/* Close AI bar (hidden when AI is the only toolbar item) */}
+                {!aiOnlyToolbar && (
+                  <button
+                    type="button"
+                    onClick={handleAIBarClose}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      padding: 2,
+                      color: "GrayText",
+                      flexShrink: 0,
+                    }}
+                    title="Close AI"
+                  >
+                    {icons?.close ?? (
+                      <XIcon style={{ width: 14, height: 14 }} />
+                    )}
+                  </button>
+                )}
               </div>
             )}
+          </div>
+        )}
+
+        {/* ── Filter builder drawer (inside table) ── */}
+        {showFilterBuilder && (
+          <div
+            className={classNames.filterDrawer ?? ""}
+            style={{
+              position: "absolute",
+              top: 0,
+              right: 0,
+              bottom: 0,
+              width: 340,
+              maxWidth: "80%",
+              zIndex: 50,
+              display: "flex",
+              flexDirection: "column",
+              background: isDark ? "rgba(20,20,20,0.75)" : "rgba(255,255,255,0.8)",
+              backdropFilter: "blur(16px)",
+              WebkitBackdropFilter: "blur(16px)",
+              borderLeft: "1px solid rgba(128,128,128,0.15)",
+              boxShadow: "-4px 0 20px rgba(0,0,0,0.15)",
+              animation: "bt-drawer-in 0.2s ease",
+              color: "inherit",
+              ...styles.filterDrawer,
+            }}
+          >
+            <div style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "10px 14px",
+              borderBottom: "1px solid rgba(128,128,128,0.15)",
+              flexShrink: 0,
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                <span style={{ fontWeight: 600 }}>Filter Builder</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowFilterBuilder(false)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "GrayText",
+                  padding: 2,
+                }}
+              >
+                {icons?.close ?? <XIcon style={{ width: 14, height: 14 }} />}
+              </button>
+            </div>
+
+            <div style={{
+              padding: "10px 14px",
+              borderBottom: "1px solid rgba(128,128,128,0.1)",
+              flexShrink: 0,
+            }}>
+              <div style={{ fontSize: "0.85em", color: "GrayText", marginBottom: 6 }}>Logic</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {(["and", "or"] as const).map((logic) => (
+                  <button
+                    key={logic}
+                    type="button"
+                    onClick={() => setFilterBuilderLogic(logic)}
+                    style={{
+                      flex: 1,
+                      padding: "5px 0",
+                      borderRadius: 5,
+                      border: `1.5px solid ${filterBuilderLogic === logic ? accentColor : "rgba(128,128,128,0.2)"}`,
+                      background: filterBuilderLogic === logic ? `${accentColor}15` : "transparent",
+                      color: filterBuilderLogic === logic ? accentColor : "inherit",
+                      cursor: "pointer",
+                      fontSize: "inherit",
+                      fontWeight: 500,
+                    }}
+                  >
+                    {logic === "and" ? "Match ALL" : "Match ANY"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{
+              flex: "1 1 0%",
+              overflowY: "auto",
+              padding: "10px 14px",
+              display: "flex",
+              flexDirection: "column",
+              gap: 10,
+            }}>
+              {filterBuilderRows.map((row, ri) => (
+                <div
+                  key={row.id}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 6,
+                    padding: 10,
+                    borderRadius: 6,
+                    border: "1px solid rgba(128,128,128,0.15)",
+                    background: "rgba(128,128,128,0.04)",
+                    position: "relative",
+                  }}
+                >
+                  <div style={{
+                    position: "absolute",
+                    top: 4,
+                    right: 4,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                  }}>
+                    <span style={{ fontSize: "0.75em", color: "GrayText", fontWeight: 500 }}>#{ri + 1}</span>
+                    <button
+                      type="button"
+                      onClick={() => setFilterBuilderRows((p) => p.length > 1 ? p.filter((r) => r.id !== row.id) : p)}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        cursor: filterBuilderRows.length > 1 ? "pointer" : "not-allowed",
+                        color: filterBuilderRows.length > 1 ? "#ef4444" : "GrayText",
+                        fontSize: "inherit",
+                        padding: "0 2px",
+                        lineHeight: 1,
+                        opacity: filterBuilderRows.length > 1 ? 1 : 0.4,
+                      }}
+                      title="Remove condition"
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: "0.85em", color: "GrayText", marginBottom: 3 }}>Column</div>
+                    <select
+                      value={row.column}
+                      onChange={(e) => setFilterBuilderRows((p) => p.map((r) => r.id === row.id ? { ...r, column: e.target.value } : r))}
+                      style={{
+                        width: "100%",
+                        fontSize: "inherit",
+                        border: "1px solid rgba(128,128,128,0.2)",
+                        borderRadius: 5,
+                        padding: "5px 8px",
+                        background: "transparent",
+                        color: "inherit",
+                        outline: "none",
+                      }}
+                    >
+                      <option value="">Select column...</option>
+                      {orderedColumns.filter((c) => !c.key.startsWith("__")).map((c) => (
+                        <option key={c.key} value={c.key}>{typeof c.title === "string" ? c.title : c.key}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: "0.85em", color: "GrayText", marginBottom: 3 }}>Operator</div>
+                    <select
+                      value={row.operator}
+                      onChange={(e) => setFilterBuilderRows((p) => p.map((r) => r.id === row.id ? { ...r, operator: e.target.value } : r))}
+                      style={{
+                        width: "100%",
+                        fontSize: "inherit",
+                        border: "1px solid rgba(128,128,128,0.2)",
+                        borderRadius: 5,
+                        padding: "5px 8px",
+                        background: "transparent",
+                        color: "inherit",
+                        outline: "none",
+                      }}
+                    >
+                      <option value="contains">Contains</option>
+                      <option value="eq">Equals</option>
+                      <option value="neq">Not equals</option>
+                      <option value="gt">Greater than</option>
+                      <option value="gte">Greater or equal</option>
+                      <option value="lt">Less than</option>
+                      <option value="lte">Less or equal</option>
+                      <option value="startsWith">Starts with</option>
+                      <option value="endsWith">Ends with</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: "0.85em", color: "GrayText", marginBottom: 3 }}>Value</div>
+                    <input
+                      type="text"
+                      value={row.value}
+                      placeholder="Enter value..."
+                      onChange={(e) => setFilterBuilderRows((p) => p.map((r) => r.id === row.id ? { ...r, value: e.target.value } : r))}
+                      style={{
+                        width: "100%",
+                        fontSize: "inherit",
+                        border: "1px solid rgba(128,128,128,0.2)",
+                        borderRadius: 5,
+                        padding: "5px 8px",
+                        outline: "none",
+                        background: "transparent",
+                        color: "inherit",
+                        boxSizing: "border-box",
+                      }}
+                      onFocus={(e) => { e.currentTarget.style.borderColor = accentColor; }}
+                      onBlur={(e) => { e.currentTarget.style.borderColor = "rgba(128,128,128,0.2)"; }}
+                    />
+                  </div>
+                </div>
+              ))}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setFilterBuilderRows((p) => [...p, { id: filterBuilderIdRef.current++, column: "", operator: "contains", value: "" }]);
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                  background: "none",
+                  border: "1px dashed rgba(128,128,128,0.25)",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  color: accentColor,
+                  fontSize: "inherit",
+                  padding: "8px 0",
+                  fontWeight: 500,
+                }}
+              >
+                + Add condition
+              </button>
+            </div>
+
+            <div style={{
+              padding: "10px 14px",
+              borderTop: "1px solid rgba(128,128,128,0.15)",
+              display: "flex",
+              gap: 8,
+              flexShrink: 0,
+            }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setColumnFilters({});
+                  onFilterChange?.({});
+                  setFilterBuilderRows([{ id: filterBuilderIdRef.current++, column: "", operator: "contains", value: "" }]);
+                }}
+                style={{
+                  flex: 1,
+                  fontSize: "inherit",
+                  background: "none",
+                  border: "1px solid rgba(128,128,128,0.2)",
+                  borderRadius: 5,
+                  padding: "6px 0",
+                  cursor: "pointer",
+                  color: "inherit",
+                  fontWeight: 500,
+                }}
+              >
+                Clear All
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  applyFilterBuilder();
+                  setShowFilterBuilder(false);
+                }}
+                style={{
+                  flex: 1,
+                  fontSize: "inherit",
+                  background: accentColor,
+                  border: "none",
+                  borderRadius: 5,
+                  padding: "6px 0",
+                  cursor: "pointer",
+                  color: "#fff",
+                  fontWeight: 600,
+                }}
+              >
+                Apply Filters
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── AI insights panel ── */}
+        {aiInsights && (
+          <div
+            style={{
+              borderBottom: "1px solid rgba(128,128,128,0.2)",
+              padding: "10px 12px",
+              fontSize: "inherit",
+              lineHeight: 1.6,
+              background: `linear-gradient(90deg, ${accentColor}06, transparent)`,
+              flexShrink: 0,
+              maxHeight: 200,
+              overflowY: "auto",
+              position: "relative",
+              whiteSpace: "pre-wrap",
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setAiInsights(null)}
+              style={{
+                position: "absolute",
+                top: 6,
+                right: 6,
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                color: "GrayText",
+                padding: 2,
+                display: "flex",
+              }}
+            >
+              {icons?.close ?? <XIcon style={{ width: 12, height: 12 }} />}
+            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 6, fontWeight: 600, fontSize: "0.85em", color: accentColor }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/><path d="M22 4v16"/></svg>
+              AI Insights
+            </div>
+            {aiInsights}
+          </div>
+        )}
+
+        {/* ── AI chart panel ── */}
+        {aiChart && (
+          <div
+            style={{
+              borderBottom: "1px solid rgba(128,128,128,0.2)",
+              flexShrink: 0,
+              position: "relative",
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setAiChart(null)}
+              style={{
+                position: "absolute",
+                top: 6,
+                right: 6,
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                color: "GrayText",
+                padding: 2,
+                display: "flex",
+                zIndex: 1,
+              }}
+            >
+              {icons?.close ?? <XIcon style={{ width: 12, height: 12 }} />}
+            </button>
+            {aiChart}
           </div>
         )}
 
@@ -2971,7 +4312,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
               alignItems: "center",
               gap: 8,
               padding: "6px 12px",
-              fontSize: 12,
+              fontSize: "inherit",
               borderBottom: "1px solid rgba(128,128,128,0.2)",
               background: `linear-gradient(90deg, ${accentColor}08, transparent)`,
               flexShrink: 0,
@@ -2999,7 +4340,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                 cursor: justSavedFilter ? "default" : "pointer",
                 padding: "2px 8px",
                 color: accentColor,
-                fontSize: 11,
+                fontSize: "0.85em",
                 flexShrink: 0,
                 fontWeight: 500,
                 transition: "all 0.2s ease",
@@ -3026,7 +4367,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                 cursor: "pointer",
                 padding: "2px 8px",
                 color: "inherit",
-                fontSize: 11,
+                fontSize: "0.85em",
                 flexShrink: 0,
                 opacity: 0.7,
               }}
@@ -3048,7 +4389,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
               alignItems: "center",
               gap: 8,
               padding: "6px 12px",
-              fontSize: 12,
+              fontSize: "inherit",
               borderBottom: "1px solid rgba(239,68,68,0.2)",
               background: "rgba(239,68,68,0.06)",
               color: "#ef4444",
@@ -3093,6 +4434,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
         >
           {layoutLoading ? (
             <div
+              data-bt-scroll=""
               style={{
                 position: "absolute",
                 inset: 0,
@@ -3132,17 +4474,18 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                         whiteSpace: "nowrap" as const,
                         borderBottom: "1px solid rgba(128,128,128,0.2)",
                         backdropFilter: "blur(8px)",
+                        WebkitBackdropFilter: "blur(8px)",
                         position: "sticky",
                         top: 0,
                         zIndex: isPinned ? 13 : 10,
+                        paddingLeft: isSystem ? 0 : 8,
+                        paddingRight: isSystem ? 0 : 8,
                         ...(isPinned
                           ? {
                               [column.pinned as string]: offset ?? 0,
                               ...styles.pinnedHeader,
                             }
                           : styles.header),
-                        paddingLeft: isSystem ? 0 : 8,
-                        paddingRight: isSystem ? 0 : 8,
                       }}
                     ></div>
                   );
@@ -3179,6 +4522,9 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                               display: "flex",
                               alignItems: "center",
                               borderBottom: "1px solid rgba(128,128,128,0.2)",
+                              paddingLeft: isSystem ? 0 : 8,
+                              paddingRight: isSystem ? 0 : 8,
+                              justifyContent: isSystem ? "center" : undefined,
                               ...(isPinned
                                 ? {
                                     position: "sticky" as const,
@@ -3187,9 +4533,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                                     ...styles.pinnedCell,
                                   }
                                 : {}),
-                              paddingLeft: isSystem ? 0 : 8,
-                              paddingRight: isSystem ? 0 : 8,
-                              justifyContent: isSystem ? "center" : undefined,
                             }}
                           >
                             <div
@@ -3214,16 +4557,72 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
           ) : (
             <div
               ref={tableAreaCallbackRef}
+              tabIndex={0}
+              data-bt-scroll=""
               style={{
                 position: "absolute",
                 inset: 0,
                 overflow: "auto",
                 contain: "layout paint",
+                outline: "none",
               }}
+              onKeyDown={(e) => {
+                const maxRow = treeProcessedData.length - 1;
+                const maxCol = orderedColumns.length - 1;
+                if (maxRow < 0 || maxCol < 0) return;
+
+                const nav = (dr: number, dc: number) => {
+                  e.preventDefault();
+                  setFocusedCell((prev) => {
+                    const r = Math.max(0, Math.min(maxRow, (prev?.row ?? 0) + dr));
+                    const c = Math.max(0, Math.min(maxCol, (prev?.col ?? 0) + dc));
+                    return { row: r, col: c };
+                  });
+                };
+
+                switch (e.key) {
+                  case "ArrowDown": nav(1, 0); break;
+                  case "ArrowUp": nav(-1, 0); break;
+                  case "ArrowRight": nav(0, 1); break;
+                  case "ArrowLeft": nav(0, -1); break;
+                  case "Home":
+                    e.preventDefault();
+                    setFocusedCell((prev) => ({ row: prev?.row ?? 0, col: e.ctrlKey ? 0 : 0 }));
+                    break;
+                  case "End":
+                    e.preventDefault();
+                    setFocusedCell((prev) => ({ row: prev?.row ?? 0, col: maxCol }));
+                    break;
+                  case "Tab":
+                    if (focusedCell) {
+                      e.preventDefault();
+                      const dc = e.shiftKey ? -1 : 1;
+                      setFocusedCell((prev) => {
+                        if (!prev) return { row: 0, col: 0 };
+                        let c = prev.col + dc;
+                        let r = prev.row;
+                        if (c > maxCol) { c = 0; r = Math.min(r + 1, maxRow); }
+                        else if (c < 0) { c = maxCol; r = Math.max(r - 1, 0); }
+                        return { row: r, col: c };
+                      });
+                    }
+                    break;
+                  case "Escape":
+                    setFocusedCell(null);
+                    break;
+                }
+              }}
+              onFocus={() => {
+                if (!focusedCell) setFocusedCell({ row: 0, col: 0 });
+              }}
+              onBlur={() => setFocusedCell(null)}
             >
               <ResizeOverlay ref={resizeOverlayRef} accentColor={accentColor} />
 
               <div
+                role="grid"
+                aria-rowcount={data.length}
+                aria-colcount={orderedColumns.length}
                 style={{
                   display: "grid",
                   gridTemplateColumns,
@@ -3310,7 +4709,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                 onTouchEnd={cancelCellLongPress}
                 onTouchCancel={cancelCellLongPress}
                 onClick={
-                  onRowClick
+                  onRowClick || masterDetail
                     ? (e: React.MouseEvent) => {
                         const target = e.target as HTMLElement;
                         if (
@@ -3322,25 +4721,29 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                         if (!cell) return;
                         const rk = cell.dataset.rowKey;
                         if (!rk) return;
+                        const findAndHandle = (row: T, i: number) => {
+                          onRowClick?.(row, i, e);
+                          if (masterDetail) setMasterDetailRecord(row);
+                        };
                         for (let i = 0; i < (displayData as T[]).length; i++) {
                           const row = displayData[i] as T;
                           if (row == null) continue;
                           if (getSafeRowKey(row, i) === rk) {
-                            onRowClick(row, i, e);
+                            findAndHandle(row, i);
                             return;
                           }
                         }
                         for (let i = 0; i < pinnedTopRows.length; i++) {
                           if (pinnedTopRows[i] == null) continue;
                           if (getSafeRowKey(pinnedTopRows[i], i) === rk) {
-                            onRowClick(pinnedTopRows[i], i, e);
+                            findAndHandle(pinnedTopRows[i], i);
                             return;
                           }
                         }
                         for (let i = 0; i < pinnedBottomRows.length; i++) {
                           if (pinnedBottomRows[i] == null) continue;
                           if (getSafeRowKey(pinnedBottomRows[i], i) === rk) {
-                            onRowClick(pinnedBottomRows[i], i, e);
+                            findAndHandle(pinnedBottomRows[i], i);
                             return;
                           }
                         }
@@ -3384,14 +4787,14 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                           boxSizing: "border-box",
                           fontWeight: 500,
                           userSelect: "none",
-                          ...group.style,
-                          ...styles.header,
                           borderTop: "none",
                           borderLeft: "none",
                           borderBottom: "1px solid rgba(128,128,128,0.2)",
                           borderRight: groupEndsAtLastCol
                             ? "none"
                             : "1px solid rgba(128,128,128,0.2)",
+                          ...group.style,
+                          ...styles.header,
                         }}
                       >
                         {group.title}
@@ -3436,17 +4839,18 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                             zIndex: 13,
                             width: "48px",
                             gridRow: leafGridRow,
-                            ...styles.header,
-                            ...styles.pinnedHeader,
                             borderTop: "none",
                             borderLeft: "none",
                             borderBottom: "1px solid rgba(128,128,128,0.2)",
                             borderRight: "1px solid rgba(128,128,128,0.2)",
+                            ...styles.header,
+                            ...styles.pinnedHeader,
                           }}
                         >
                           {rowSelection.type !== "radio" &&
                             !rowSelection.hideSelectAll && (
                               <input
+                                data-bt-check=""
                                 type="checkbox"
                                 checked={
                                   dataLength > 0 &&
@@ -3480,11 +4884,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                                     });
                                   }
                                 }}
-                                style={{
-                                  cursor: "pointer",
-                                  accentColor,
-                                  backgroundColor: "#94A3B8",
-                                }}
                               />
                             )}
                         </div>
@@ -3512,12 +4911,12 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                             zIndex: 13,
                             width: "36px",
                             gridRow: leafGridRow,
-                            ...styles.header,
-                            ...styles.pinnedHeader,
                             borderTop: "none",
                             borderLeft: "none",
                             borderBottom: "1px solid rgba(128,128,128,0.2)",
                             borderRight: "1px solid rgba(128,128,128,0.2)",
+                            ...styles.header,
+                            ...styles.pinnedHeader,
                           }}
                         >
                           <GripVerticalIcon style={{ width: 12, height: 12, opacity: 0.4 }} />
@@ -3548,12 +4947,12 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                             width: "40px",
                             backgroundColor: styles.pinnedBg,
                             gridRow: leafGridRow,
-                            ...styles.header,
-                            ...styles.pinnedHeader,
                             borderTop: "none",
                             borderLeft: "none",
                             borderBottom: "1px solid rgba(128,128,128,0.2)",
                             borderRight: "1px solid rgba(128,128,128,0.2)",
+                            ...styles.header,
+                            ...styles.pinnedHeader,
                           }}
                         />
                       );
@@ -3578,9 +4977,13 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                         isLastColumn={visualIndex === orderedColumns.length - 1}
                         isFirstColumn={visualIndex === firstDataColIndex}
                         sortDirection={
-                          sortState.key === column.key
-                            ? sortState.direction
-                            : null
+                          sortState.find((s) => s.key === column.key)
+                            ?.direction ?? null
+                        }
+                        sortPriority={
+                          multiSort && sortState.length > 1
+                            ? sortState.findIndex((s) => s.key === column.key) + 1 || undefined
+                            : undefined
                         }
                         onSort={handleSort}
                         filterValue={columnFilters[column.key] ?? ""}
@@ -3599,6 +5002,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                         headerHeight={leafHeight}
                         stickyTop={leafStickyTop}
                         onAutoFitColumn={handleAutoFitColumn}
+                        isDark={isDark}
                       />
                     );
                   });
@@ -3626,6 +5030,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                     >
                       {emptyRenderer ?? (
                         <div
+                          className={classNames.emptyState ?? ""}
                           style={{
                             display: "flex",
                             flexDirection: "column",
@@ -3634,9 +5039,10 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                             paddingTop: 32,
                             paddingBottom: 32,
                             color: "GrayText",
+                            ...styles.emptyState,
                           }}
                         >
-                          <span style={{ fontSize: 14 }}>No data</span>
+                          <span style={{ fontSize: "inherit" }}>No data</span>
                         </div>
                       )}
                     </div>
@@ -3692,12 +5098,20 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                     gridTemplateColumns={gridTemplateColumns}
                     headerHeight={HEADER_HEIGHT}
                     rowClassName={
-                      rowClassName as
-                        | ((record: DataRecord, index: number) => string)
-                        | undefined
+                      cfRowRules.length > 0
+                        ? (record: DataRecord, index: number) => {
+                            const base = rowClassName
+                              ? (rowClassName as (record: DataRecord, index: number) => string)(record, index)
+                              : "";
+                            const cf = getCFRowClassName(record as T);
+                            return [base, cf].filter(Boolean).join(" ") || "";
+                          }
+                        : (rowClassName as
+                            | ((record: DataRecord, index: number) => string)
+                            | undefined)
                     }
                     rowStyle={
-                      aiStyleOps.length > 0
+                      aiStyleOps.length > 0 || cfRowRules.length > 0
                         ? (record: DataRecord, index: number) => {
                             const base = rowStyle
                               ? (
@@ -3708,8 +5122,9 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                                 )(record, index)
                               : undefined;
                             const ai = getAIRowStyleForRecord(record as T);
-                            if (!base && !ai) return {} as React.CSSProperties;
-                            return { ...base, ...ai };
+                            const cf = getCFRowStyle(record as T);
+                            if (!base && !ai && !cf) return {} as React.CSSProperties;
+                            return { ...base, ...cf, ...ai };
                           }
                         : (rowStyle as
                             | ((
@@ -3735,9 +5150,13 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                     onRowHeightChange={handleRowHeightChange}
                     columnGridIndexMap={columnGridIndexMap}
                     cellStyleFn={
-                      aiCellStyleOps.length > 0
-                        ? (record: DataRecord, columnKey: string) =>
-                            getAICellStyleForRecord(record as T, columnKey)
+                      aiCellStyleOps.length > 0 || cfCellRules.length > 0
+                        ? (record: DataRecord, columnKey: string) => {
+                            const ai = getAICellStyleForRecord(record as T, columnKey);
+                            const cf = getCFCellStyle(record as T, columnKey);
+                            if (!ai && !cf) return undefined;
+                            return { ...cf, ...ai };
+                          }
                         : undefined
                     }
                     onRowDragStart={
@@ -3745,6 +5164,12 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                         ? handleRowDragStart
                         : undefined
                     }
+                    focusedCell={focusedCell}
+                    enableRowAnimation={enableRowAnimation}
+                    onGroupToggle={rowGrouping ? toggleGroup : undefined}
+                    groupAccentColor={accentColor}
+                    onTreeToggle={treeData ? toggleTreeNode : undefined}
+                    treeIndentSize={treeData?.indentSize ?? 20}
                   />
                 )}
               </div>
@@ -3752,21 +5177,66 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
           )}
         </div>
 
+        {/* ── Master-detail panel ── */}
+        {masterDetail && masterDetailRecord && (
+          <div
+            className={classNames.masterDetailPanel ?? ""}
+            style={{
+              borderTop: `2px solid ${accentColor}`,
+              padding: 12,
+              flexShrink: 0,
+              maxHeight: "40%",
+              overflow: "auto",
+              position: "relative",
+              ...styles.masterDetailPanel,
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setMasterDetailRecord(null)}
+              style={{
+                position: "absolute",
+                top: 8,
+                right: 8,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "none",
+                border: "1px solid rgba(128,128,128,0.2)",
+                borderRadius: 4,
+                cursor: "pointer",
+                padding: "2px 4px",
+                color: "GrayText",
+                fontSize: "0.85em",
+              }}
+              title="Close detail"
+            >
+              {icons?.close ?? <XIcon style={{ width: 12, height: 12 }} />}
+            </button>
+            {masterDetail(masterDetailRecord, () => setMasterDetailRecord(null))}
+          </div>
+        )}
+
         {pgEnabled && (
           <div
             className={classNames.pagination ?? ""}
             style={{
               display: "flex",
               height: 36,
+              minHeight: 36,
+              maxHeight: 36,
+              boxSizing: "border-box",
               alignItems: "center",
               justifyContent: "space-between",
               borderTop: "1px solid rgba(128,128,128,0.2)",
               paddingLeft: 12,
               paddingRight: 12,
-              fontSize: 12,
+              fontSize: "inherit",
               backdropFilter: "blur(8px)",
+              WebkitBackdropFilter: "blur(8px)",
               backgroundColor: "rgba(128,128,128,0.06)",
               gap: 12,
+              flexShrink: 0,
               ...styles.pagination,
             }}
           >
@@ -3783,7 +5253,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                     className={classNames.paginationInfo ?? ""}
                     style={{
                       color: "GrayText",
-                      fontSize: 12,
+                      fontSize: "inherit",
                       ...styles.paginationInfo,
                     }}
                   >
@@ -3796,7 +5266,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                     className={classNames.paginationInfo ?? ""}
                     style={{
                       color: "GrayText",
-                      fontSize: 12,
+                      fontSize: "inherit",
                       ...styles.paginationInfo,
                     }}
                   >
@@ -3827,7 +5297,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                   cursor: currentPage === 1 ? "not-allowed" : "pointer",
                   alignItems: "center",
                   justifyContent: "center",
-                  fontSize: 12,
+                  fontSize: "inherit",
                   opacity: currentPage === 1 ? 0.2 : 1,
                   background: "none",
                   border: "none",
@@ -3853,7 +5323,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                   cursor: currentPage === 1 ? "not-allowed" : "pointer",
                   alignItems: "center",
                   justifyContent: "center",
-                  fontSize: 12,
+                  fontSize: "inherit",
                   opacity: currentPage === 1 ? 0.2 : 1,
                   background: "none",
                   border: "none",
@@ -3877,7 +5347,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                         color: "GrayText",
                         paddingLeft: 4,
                         paddingRight: 4,
-                        fontSize: 12,
+                        fontSize: "inherit",
                         userSelect: "none",
                       }}
                     >
@@ -3904,8 +5374,9 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                       borderRadius: 4,
                       paddingLeft: 6,
                       paddingRight: 6,
-                      fontSize: 12,
-                      color: isActivePage ? accentColor : undefined,
+                      fontSize: "inherit",
+                      color: isActivePage ? accentColor : "inherit",
+                      fontWeight: isActivePage ? 600 : "inherit",
                       background: "none",
                       border: "none",
                       ...styles.paginationButton,
@@ -3933,7 +5404,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                     currentPage === totalPages ? "not-allowed" : "pointer",
                   alignItems: "center",
                   justifyContent: "center",
-                  fontSize: 12,
+                  fontSize: "inherit",
                   opacity: currentPage === totalPages ? 0.2 : 1,
                   background: "none",
                   border: "none",
@@ -3960,7 +5431,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                     currentPage === totalPages ? "not-allowed" : "pointer",
                   alignItems: "center",
                   justifyContent: "center",
-                  fontSize: 12,
+                  fontSize: "inherit",
                   opacity: currentPage === totalPages ? 0.2 : 1,
                   background: "none",
                   border: "none",
@@ -3999,7 +5470,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                     paddingRight: 6,
                     paddingTop: 2,
                     paddingBottom: 2,
-                    fontSize: 12,
+                    fontSize: "inherit",
                     height: 24,
                     background: "inherit",
                     color: "inherit",
@@ -4020,6 +5491,50 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
             </div>
           </div>
         )}
+
+        {/* ── Status bar ── */}
+        {showStatusBar && (
+          <div
+            className={classNames.statusBar ?? ""}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              padding: "4px 12px",
+              borderTop: "1px solid rgba(128,128,128,0.2)",
+              fontSize: "0.85em",
+              color: "GrayText",
+              flexShrink: 0,
+              minHeight: 24,
+              ...styles.statusBar,
+            }}
+          >
+            {statusBarContent ? (
+              statusBarContent({
+                totalRows: data.length,
+                filteredRows: treeProcessedData.length,
+                selectedRows: rowSelection?.selectedRowKeys?.length ?? 0,
+                currentPage: pgCurrent,
+                pageSize: pgSize,
+              })
+            ) : (
+              <>
+                <span>{treeProcessedData.length === data.length ? `${data.length} rows` : `${treeProcessedData.length} of ${data.length} rows`}</span>
+                {rowSelection && rowSelection.selectedRowKeys.length > 0 && (
+                  <span style={{ color: accentColor, fontWeight: 500 }}>
+                    {rowSelection.selectedRowKeys.length} selected
+                  </span>
+                )}
+                {Object.keys(columnFilters).length > 0 && (
+                  <span>{Object.keys(columnFilters).length} filter{Object.keys(columnFilters).length > 1 ? "s" : ""} active</span>
+                )}
+                {sortState.length > 0 && (
+                  <span>Sorted by {sortState.length} column{sortState.length > 1 ? "s" : ""}</span>
+                )}
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {mounted &&
@@ -4032,17 +5547,18 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
               position: "fixed",
               zIndex: 99999,
               height: 36,
-              fontSize: 12,
+              fontSize: "inherit",
+              color: bt.color,
               alignItems: "center",
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap" as const,
               borderRadius: 6,
               border: "1px dashed rgba(128,128,128,0.2)",
-              boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
+              boxShadow: bt.menuShadow,
               backdropFilter: "blur(16px)",
               WebkitBackdropFilter: "blur(16px)",
-              backgroundColor: "rgba(128,128,128,0.12)",
+              backgroundColor: bt.menuBg,
               cursor: "grabbing",
               pointerEvents: "none",
               ...styles.header,
@@ -4097,16 +5613,16 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
               position: "fixed",
               zIndex: 99999,
               height: 32,
-              fontSize: 11,
+              fontSize: "0.85em",
               alignItems: "center",
               justifyContent: "center",
               padding: "0 12px",
               borderRadius: 6,
               border: `1px dashed ${accentColor}60`,
-              boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
+              boxShadow: bt.menuShadow,
               backdropFilter: "blur(16px)",
               WebkitBackdropFilter: "blur(16px)",
-              backgroundColor: "rgba(128,128,128,0.12)",
+              backgroundColor: bt.menuBg,
               cursor: "grabbing",
               pointerEvents: "none",
               fontWeight: 500,
@@ -4158,7 +5674,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
             background: "none",
             border: "none",
             padding: "6px 12px",
-            fontSize: 12,
+            fontSize: "inherit",
             cursor: "pointer",
             color: "inherit",
             whiteSpace: "nowrap",
@@ -4176,12 +5692,13 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
                 minWidth: 170,
                 borderRadius: 8,
                 border: "1px solid rgba(128,128,128,0.2)",
-                boxShadow: "0 4px 24px rgba(0,0,0,0.12)",
+                boxShadow: bt.menuShadow,
                 backdropFilter: "blur(16px)",
                 WebkitBackdropFilter: "blur(16px)",
-                backgroundColor: "rgba(128,128,128,0.08)",
+                backgroundColor: bt.menuBg,
+                color: bt.color,
                 padding: "4px 0",
-                fontSize: 10,
+                fontSize: "0.75em",
               }}
             >
               {hasRowPin && (

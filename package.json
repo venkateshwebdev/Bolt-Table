@@ -19,6 +19,7 @@
     "LICENSE"
   ],
   "scripts": {
+    "dev": "npm install --prefix playground && npm run dev --prefix playground",
     "build": "tsup",
     "prepublishOnly": "npm run build"
   },

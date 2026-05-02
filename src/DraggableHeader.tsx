@@ -51,8 +51,10 @@ interface DraggableHeaderProps {
   isLastColumn?: boolean;
   /** Current sort direction applied to this column. */
   sortDirection?: SortDirection;
+  /** 1-based priority of this column in a multi-column sort. Undefined when not multi-sorting or column is not sorted. */
+  sortPriority?: number;
   /** Called when the user clicks a sort option in the context menu. */
-  onSort?: (columnKey: string, direction?: SortDirection) => void;
+  onSort?: (columnKey: string, direction?: SortDirection, additive?: boolean) => void;
   /** Current filter value active on this column. */
   filterValue?: string;
   /** Called when the user submits a filter value via the context menu. */
@@ -75,6 +77,8 @@ interface DraggableHeaderProps {
   isFirstColumn?: boolean;
   /** Called when the user double-clicks the resize handle to auto-fit column width. */
   onAutoFitColumn?: (columnKey: string) => void;
+  /** Whether the table is in dark mode — used for portalled elements that can't inherit wrapper styles. */
+  isDark?: boolean;
 }
 
 function isColumnSortable(col: ColumnType<DataRecord>): boolean {
@@ -100,6 +104,7 @@ const DraggableHeader = React.memo(
     onToggleHide,
     isLastColumn = false,
     sortDirection,
+    sortPriority,
     onSort,
     filterValue = '',
     onFilter,
@@ -113,6 +118,7 @@ const DraggableHeader = React.memo(
     stickyTop = 0,
     isFirstColumn = false,
     onAutoFitColumn,
+    isDark = false,
   }: DraggableHeaderProps) => {
     const effectivelySortable = isColumnSortable(column);
     const effectivelyFilterable = !disabledFilters && isColumnFilterable(column);
@@ -246,6 +252,8 @@ const DraggableHeader = React.memo(
         <div
           data-column-key={column.key}
           data-bt-header=""
+          role="columnheader"
+          aria-sort={sortDirection === 'asc' ? 'ascending' : sortDirection === 'desc' ? 'descending' : undefined}
           {...(isPinned ? { 'data-bt-pinned': '' } : {})}
           style={headerStyle}
           className={`${column.className ?? ''} ${classNames?.header ?? ''} ${isPinned ? (classNames?.pinnedHeader ?? '') : ''}`}
@@ -315,14 +323,20 @@ const DraggableHeader = React.memo(
               {column.title}
 
               {sortDirection === 'asc' && (
-                <span style={{ color: accentColor, flexShrink: 0, display: 'flex' }}>
+                <span style={{ color: accentColor, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 1 }}>
                   {icons?.sortAsc ?? <ArrowUpAZIcon style={{ width: 12, height: 12 }} />}
+                  {sortPriority != null && sortPriority > 0 && (
+                    <span style={{ fontSize: "0.6em", fontWeight: 700, lineHeight: 1, opacity: 0.8, minWidth: 8, textAlign: 'center' }}>{sortPriority}</span>
+                  )}
                 </span>
               )}
 
               {sortDirection === 'desc' && (
-                <span style={{ color: accentColor, flexShrink: 0, display: 'flex' }}>
+                <span style={{ color: accentColor, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 1 }}>
                   {icons?.sortDesc ?? <ArrowDownAZIcon style={{ width: 12, height: 12 }} />}
+                  {sortPriority != null && sortPriority > 0 && (
+                    <span style={{ fontSize: "0.6em", fontWeight: 700, lineHeight: 1, opacity: 0.8, minWidth: 8, textAlign: 'center' }}>{sortPriority}</span>
+                  )}
                 </span>
               )}
 
@@ -402,7 +416,7 @@ const DraggableHeader = React.memo(
             <div
               ref={menuRef}
               style={{
-                fontSize: 10,
+                fontSize: "0.75em",
                 position: 'fixed',
                 zIndex: 9999,
                 minWidth: 160,
@@ -410,9 +424,11 @@ const DraggableHeader = React.memo(
                 border: '1px solid rgba(128,128,128,0.2)',
                 paddingTop: 4,
                 paddingBottom: 4,
-                boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.1)',
-                backdropFilter: 'blur(12px)',
-                backgroundColor: 'rgba(128,128,128,0.1)',
+                boxShadow: isDark ? '0 10px 20px rgba(0,0,0,0.4)' : '0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.1)',
+                backdropFilter: 'blur(16px)',
+                WebkitBackdropFilter: 'blur(16px)',
+                backgroundColor: isDark ? 'rgba(28,28,30,0.88)' : 'rgba(255,255,255,0.92)',
+                color: isDark ? '#e0e0e0' : '#1a1a2e',
                 left: `${contextMenu.x}px`,
                 top: `${contextMenu.y}px`,
               }}
@@ -447,8 +463,8 @@ const DraggableHeader = React.memo(
                       fontWeight: sortDirection === 'asc' ? 600 : undefined,
                       ...(sortDirection === 'asc' ? { color: accentColor } : {}),
                     }}
-                    onClick={() => {
-                      onSort(column.key, 'asc');
+                    onClick={(e) => {
+                      onSort(column.key, 'asc', e.shiftKey);
                       setContextMenu(null);
                     }}
                   >
@@ -462,8 +478,8 @@ const DraggableHeader = React.memo(
                       fontWeight: sortDirection === 'desc' ? 600 : undefined,
                       ...(sortDirection === 'desc' ? { color: accentColor } : {}),
                     }}
-                    onClick={() => {
-                      onSort(column.key, 'desc');
+                    onClick={(e) => {
+                      onSort(column.key, 'desc', e.shiftKey);
                       setContextMenu(null);
                     }}
                   >
@@ -477,40 +493,104 @@ const DraggableHeader = React.memo(
               {effectivelyFilterable && onFilter && (
                 <>
                   {showFilterInput ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, paddingLeft: 8, paddingRight: 8, paddingTop: 6, paddingBottom: 6 }}>
-                      <input
-                        ref={filterInputRef}
-                        type="text"
-                        autoFocus
-                        defaultValue={filterValue}
-                        placeholder="Filter..."
-                        style={{
-                          width: '100%',
-                          borderRadius: 4,
-                          border: '1px solid rgba(128,128,128,0.2)',
-                          paddingLeft: 6,
-                          paddingRight: 6,
-                          paddingTop: 2,
-                          paddingBottom: 2,
-                          fontSize: 12,
-                          outline: 'none',
-                          background: 'inherit',
-                          color: 'inherit',
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            onFilter(
-                              column.key,
-                              (e.target as HTMLInputElement).value,
-                            );
-                            setShowFilterInput(false);
-                            setContextMenu(null);
-                          }
-                          if (e.key === 'Escape') {
-                            setShowFilterInput(false);
-                          }
-                        }}
-                      />
+                    <div style={{ display: 'flex', flexDirection: column.filterType === 'dateRange' || column.filterType === 'numberRange' ? 'column' : 'row', alignItems: column.filterType === 'dateRange' || column.filterType === 'numberRange' ? 'stretch' : 'center', gap: 4, paddingLeft: 8, paddingRight: 8, paddingTop: 6, paddingBottom: 6 }}>
+                      {column.filterType === 'dateRange' ? (
+                        <>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: "0.85em" }}>
+                            <span style={{ opacity: 0.6, minWidth: 32 }}>From</span>
+                            <input
+                              type="date"
+                              autoFocus
+                              defaultValue={filterValue?.split('..')?.[0] ?? ''}
+                              style={{ flex: 1, borderRadius: 4, border: '1px solid rgba(128,128,128,0.2)', padding: '2px 6px', fontSize: "0.85em", outline: 'none', background: 'inherit', color: 'inherit' }}
+                              onChange={(e) => {
+                                const to = filterValue?.split('..')?.[1] ?? '';
+                                const from = e.target.value;
+                                if (from || to) onFilter(column.key, `${from}..${to}`);
+                              }}
+                            />
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: "0.85em" }}>
+                            <span style={{ opacity: 0.6, minWidth: 32 }}>To</span>
+                            <input
+                              type="date"
+                              defaultValue={filterValue?.split('..')?.[1] ?? ''}
+                              style={{ flex: 1, borderRadius: 4, border: '1px solid rgba(128,128,128,0.2)', padding: '2px 6px', fontSize: "0.85em", outline: 'none', background: 'inherit', color: 'inherit' }}
+                              onChange={(e) => {
+                                const from = filterValue?.split('..')?.[0] ?? '';
+                                const to = e.target.value;
+                                if (from || to) onFilter(column.key, `${from}..${to}`);
+                              }}
+                            />
+                          </div>
+                        </>
+                      ) : column.filterType === 'numberRange' ? (
+                        <>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: "0.85em" }}>
+                            <span style={{ opacity: 0.6, minWidth: 32 }}>Min</span>
+                            <input
+                              type="number"
+                              autoFocus
+                              defaultValue={filterValue?.split('..')?.[0] ?? ''}
+                              placeholder="Min"
+                              style={{ flex: 1, borderRadius: 4, border: '1px solid rgba(128,128,128,0.2)', padding: '2px 6px', fontSize: "0.85em", outline: 'none', background: 'inherit', color: 'inherit' }}
+                              onChange={(e) => {
+                                const max = filterValue?.split('..')?.[1] ?? '';
+                                const min = e.target.value;
+                                onFilter(column.key, `${min}..${max}`);
+                              }}
+                            />
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: "0.85em" }}>
+                            <span style={{ opacity: 0.6, minWidth: 32 }}>Max</span>
+                            <input
+                              type="number"
+                              defaultValue={filterValue?.split('..')?.[1] ?? ''}
+                              placeholder="Max"
+                              style={{ flex: 1, borderRadius: 4, border: '1px solid rgba(128,128,128,0.2)', padding: '2px 6px', fontSize: "0.85em", outline: 'none', background: 'inherit', color: 'inherit' }}
+                              onChange={(e) => {
+                                const min = filterValue?.split('..')?.[0] ?? '';
+                                const max = e.target.value;
+                                onFilter(column.key, `${min}..${max}`);
+                              }}
+                            />
+                          </div>
+                        </>
+                      ) : (
+                        <input
+                          ref={filterInputRef as React.RefObject<HTMLInputElement>}
+                          type="text"
+                          autoFocus
+                          defaultValue={filterValue}
+                          placeholder="Filter..."
+                          style={{
+                            width: '100%',
+                            borderRadius: 4,
+                            border: '1px solid rgba(128,128,128,0.2)',
+                            paddingLeft: 6,
+                            paddingRight: 6,
+                            paddingTop: 2,
+                            paddingBottom: 2,
+                            fontSize: "inherit",
+                            outline: 'none',
+                            background: 'inherit',
+                            color: 'inherit',
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              onFilter(
+                                column.key,
+                                (e.target as HTMLInputElement).value,
+                              );
+                              setShowFilterInput(false);
+                              setContextMenu(null);
+                            }
+                            if (e.key === 'Escape') {
+                              setShowFilterInput(false);
+                            }
+                          }}
+                        />
+                      )}
                     </div>
                   ) : (
                     <button type="button"
@@ -670,6 +750,7 @@ const DraggableHeader = React.memo(
       prevProps.stickyOffset === nextProps.stickyOffset &&
       prevProps.isLastColumn === nextProps.isLastColumn &&
       prevProps.sortDirection === nextProps.sortDirection &&
+      prevProps.sortPriority === nextProps.sortPriority &&
       prevProps.filterValue === nextProps.filterValue &&
       prevProps.classNames === nextProps.classNames &&
       prevProps.styles === nextProps.styles &&

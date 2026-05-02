@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import React, { ReactNode } from "react";
 
 /** `'asc'` | `'desc'` | `null` — the direction of a column sort. */
 export type SortDirection = "asc" | "desc" | null;
@@ -34,6 +34,9 @@ export interface ColumnType<T = unknown> {
 
   /** Whether this column shows a filter control. Defaults to `true`. */
   filterable?: boolean;
+
+  /** Type of filter UI to show. `"text"` (default) shows a text input, `"dateRange"` shows from/to date pickers, `"numberRange"` shows min/max number inputs. */
+  filterType?: "text" | "dateRange" | "numberRange";
 
   /**
    * Client-side filter predicate. Return `true` to keep the row.
@@ -73,6 +76,15 @@ export interface ColumnType<T = unknown> {
 
   /** When `true`, cells without a custom `render` become inline-editable on double-click. Requires the table-level `onEdit` callback. */
   editable?: boolean;
+
+  /** Type of editor to use for editable cells. Defaults to `"text"`. */
+  editorType?: "text" | "number" | "select" | "date" | "toggle";
+
+  /** Options for the `"select"` editor type. Array of `{ label, value }` or plain strings. */
+  editorOptions?: Array<string | { label: string; value: unknown }>;
+
+  /** Lazy data loader for this column. When provided, cell values are loaded asynchronously. Receives the row record and should return the cell value. */
+  lazyLoad?: (record: T) => Promise<unknown>;
 
   /** Nested child columns. When provided, this column acts as a header group and does not render data cells. Only leaf columns (without `children`) render cells. */
   children?: ColumnType<T>[];
@@ -252,6 +264,63 @@ export interface RowExpansionConfig<T = unknown> {
 
 /** Base type for row records — all row objects must be indexable by string keys. */
 export type DataRecord = Record<string, unknown>;
+
+/** Configuration for displaying data as a tree/hierarchy with parent-child relationships. */
+export interface TreeDataConfig<T = unknown> {
+  /** Property name on each row that contains child rows. Defaults to `"children"`. */
+  childrenKey?: string;
+  /** Indentation width in pixels per nesting level. Defaults to `20`. */
+  indentSize?: number;
+  /** Row keys that are expanded by default. Omit to collapse all initially. */
+  defaultExpandedKeys?: React.Key[];
+  /** Controlled set of expanded tree node keys. */
+  expandedKeys?: React.Key[];
+  /** Called when tree expand state changes. */
+  onExpandChange?: (expandedKeys: React.Key[]) => void;
+  /** When true, all tree nodes are expanded by default. */
+  defaultExpandAll?: boolean;
+  /** Custom expand/collapse icon. Receives `(expanded, record, level)`. */
+  expandIcon?: (expanded: boolean, record: T, level: number) => React.ReactNode;
+}
+
+/** Aggregation function type for row grouping. */
+export type AggregateFunction = "sum" | "avg" | "count" | "min" | "max" | ((values: unknown[]) => unknown);
+
+/** Configuration for grouping rows by a column value. */
+export interface RowGroupingConfig<T = unknown> {
+  /** The column key to group rows by. */
+  groupBy: string;
+  /** Whether groups are collapsed by default. Defaults to `false`. */
+  defaultCollapsed?: boolean;
+  /** Controlled set of collapsed group keys. */
+  collapsedGroups?: Set<string>;
+  /** Called when a group's collapse state changes. */
+  onGroupToggle?: (groupKey: string, collapsed: boolean) => void;
+  /** Per-column aggregation functions shown in group header rows. Map of columnKey → aggregate function. */
+  aggregations?: Record<string, AggregateFunction>;
+  /** Custom render for the group header row. Receives group key, rows in group, and aggregate values. */
+  groupHeaderRender?: (
+    groupKey: string,
+    groupValue: unknown,
+    rows: T[],
+    aggregates: Record<string, unknown>,
+    collapsed: boolean,
+  ) => React.ReactNode;
+}
+
+/** A single declarative conditional formatting rule applied to cells or rows. */
+export interface ConditionalFormatRule<T = unknown> {
+  /** Which column keys this rule applies to. Omit or pass empty to apply to all columns. */
+  columns?: string[];
+  /** Return `true` when the rule should activate. Receives `(value, record, columnKey)`. */
+  condition: (value: unknown, record: T, columnKey: string) => boolean;
+  /** Inline styles applied to matching cells (or rows when `applyToRow` is true). */
+  style?: React.CSSProperties;
+  /** CSS class name applied to matching cells (or rows when `applyToRow` is true). */
+  className?: string;
+  /** When true, the style/className applies to the entire row instead of individual cells. */
+  applyToRow?: boolean;
+}
 
 /** Configuration for persisting column state to localStorage. */
 export interface ColumnPersistenceConfig {
