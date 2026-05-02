@@ -131,9 +131,6 @@ interface TableBodyProps {
   /** Called when the user starts dragging a row by its grip handle. */
   onRowDragStart?: (rowIndex: number, e: React.PointerEvent) => void;
 
-  /** Currently focused cell coordinates for keyboard navigation. */
-  focusedCell?: { row: number; col: number } | null;
-
   /** Enable row position animation on data changes. */
   enableRowAnimation?: boolean;
 
@@ -169,7 +166,6 @@ interface CellProps {
   getRawRowKey?: (record: DataRecord, index: number) => React.Key;
   accentColor?: string;
   isLoading?: boolean;
-  recordFingerprint?: string;
   onEdit?: (
     value: unknown,
     record: DataRecord,
@@ -644,7 +640,7 @@ const Cell = React.memo(
       return prev.isExpanded === next.isExpanded;
     }
     if (prev.column.render) {
-      if (prev.recordFingerprint !== next.recordFingerprint) return false;
+      if (prev.record !== next.record) return false;
       if (prev.rowIndex !== next.rowIndex) return false;
       return prev.column.render === next.column.render;
     }
@@ -763,7 +759,6 @@ const TableBody: React.FC<TableBodyProps> = ({
   columnGridIndexMap,
   cellStyleFn,
   onRowDragStart,
-  focusedCell,
   enableRowAnimation = false,
   onGroupToggle,
   groupAccentColor,
@@ -914,14 +909,6 @@ const TableBody: React.FC<TableBodyProps> = ({
               const cellValue =
                 col.dataIndex != null ? row[col.dataIndex] : undefined;
               const isRowShimmer = isLoading || rowKey.startsWith("__shimmer_");
-              let recordFingerprint: string | undefined;
-              if (hasRender && !isRowShimmer) {
-                try {
-                  recordFingerprint = JSON.stringify(row);
-                } catch {
-                  recordFingerprint = rowKey;
-                }
-              }
 
               let rowCls = "";
               try {
@@ -938,8 +925,6 @@ const TableBody: React.FC<TableBodyProps> = ({
                 /* ignore */
               }
 
-              const isFocused = focusedCell?.row === virtualRow.index && focusedCell?.col === colIndex;
-
               return (
                 <div
                   key={`${rowKey}-${col.key}`}
@@ -948,7 +933,6 @@ const TableBody: React.FC<TableBodyProps> = ({
                   data-column-key={col.key}
                   data-bt-cell=""
                   data-selected={isSelected || undefined}
-                  {...(isFocused ? { "data-bt-focused": "" } : {})}
                   className={rowCls || undefined}
                   style={{
                     position: "absolute",
@@ -1024,7 +1008,6 @@ const TableBody: React.FC<TableBodyProps> = ({
                           getRawRowKey={getRawRowKey}
                           accentColor={accentColor}
                           isLoading={isRowShimmer}
-                          recordFingerprint={recordFingerprint}
                           onEdit={onEdit}
                           isEditing={
                             editingCell?.rowKey === rowKey &&
@@ -1072,7 +1055,6 @@ const TableBody: React.FC<TableBodyProps> = ({
                         getRawRowKey={getRawRowKey}
                         accentColor={accentColor}
                         isLoading={isRowShimmer}
-                        recordFingerprint={recordFingerprint}
                         onEdit={onEdit}
                         isEditing={
                           editingCell?.rowKey === rowKey &&
@@ -1246,15 +1228,6 @@ const TableBody: React.FC<TableBodyProps> = ({
                       zIndex = 11;
                     else if (isPinned) zIndex = 2;
 
-                    let recordFingerprint: string | undefined;
-                    if (col.render) {
-                      try {
-                        recordFingerprint = JSON.stringify(row);
-                      } catch {
-                        recordFingerprint = rk;
-                      }
-                    }
-
                     return (
                       <div
                         key={col.key}
@@ -1304,7 +1277,6 @@ const TableBody: React.FC<TableBodyProps> = ({
                             getRawRowKey={getRawRowKey}
                             accentColor={accentColor}
                             isLoading={false}
-                            recordFingerprint={recordFingerprint}
                             onEdit={onEdit}
                             isEditing={
                               editingCell?.rowKey === rk &&
@@ -1393,15 +1365,6 @@ const TableBody: React.FC<TableBodyProps> = ({
                       zIndex = 11;
                     else if (isPinned) zIndex = 2;
 
-                    let recordFingerprint: string | undefined;
-                    if (col.render) {
-                      try {
-                        recordFingerprint = JSON.stringify(row);
-                      } catch {
-                        recordFingerprint = rk;
-                      }
-                    }
-
                     return (
                       <div
                         key={col.key}
@@ -1451,7 +1414,6 @@ const TableBody: React.FC<TableBodyProps> = ({
                             getRawRowKey={getRawRowKey}
                             accentColor={accentColor}
                             isLoading={false}
-                            recordFingerprint={recordFingerprint}
                             onEdit={onEdit}
                             isEditing={
                               editingCell?.rowKey === rk &&

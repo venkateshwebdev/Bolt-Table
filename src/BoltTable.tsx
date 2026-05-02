@@ -650,7 +650,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
-  const [focusedCell, setFocusedCell] = useState<{ row: number; col: number } | null>(null);
   const [masterDetailRecord, setMasterDetailRecord] = useState<T | null>(null);
   React.useEffect(() => {
     setMounted(true);
@@ -1561,6 +1560,7 @@ Total rows: ${data.length}`;
       if (ghost) {
         ghost.style.display = "flex";
         ghost.style.width = `${rect.width}px`;
+        ghost.style.height = `${rect.height}px`;
         ghost.style.left = `${e.clientX - offsetX}px`;
         ghost.style.top = `${rect.top}px`;
       }
@@ -2103,23 +2103,17 @@ Total rows: ${data.length}`;
   ]);
   const [filterBuilderLogic, setFilterBuilderLogic] = useState<"and" | "or">("and");
   const filterBuilderIdRef = useRef(2);
+  const [activeBuilderRules, setActiveBuilderRules] = useState<{ rules: FilterBuilderRow[]; logic: "and" | "or" } | null>(null);
 
   const applyFilterBuilder = useCallback(() => {
-    const activeRules = filterBuilderRows.filter((r) => r.column && r.value);
-    if (activeRules.length === 0) return;
-
-    const newFilters: Record<string, string> = {};
-    for (const rule of activeRules) {
-      newFilters[rule.column] = `${rule.operator}:${rule.value}`;
+    const rules = filterBuilderRows.filter((r) => r.column && r.value);
+    if (rules.length === 0) {
+      setActiveBuilderRules(null);
+    } else {
+      setActiveBuilderRules({ rules, logic: filterBuilderLogic });
     }
-
-    setColumnFilters((prev) => {
-      const next = { ...prev, ...newFilters };
-      onFilterChange?.(next);
-      return next;
-    });
     setShowFilterBuilder(false);
-  }, [filterBuilderRows, onFilterChange]);
+  }, [filterBuilderRows, filterBuilderLogic]);
 
   const handleColumnFilter = useCallback(
     (columnKey: string, value: string) => {
@@ -2153,9 +2147,12 @@ Total rows: ${data.length}`;
     const globalSearch = globalSearchValue ?? internalGlobalSearch;
     if (globalSearch) {
       const searchLower = globalSearch.toLowerCase();
+      const searchKeys = columnsLookupRef.current
+        .filter((c) => c.dataIndex)
+        .map((c) => c.dataIndex!);
       result = result.filter((row) => {
         if (row == null) return false;
-        for (const key of Object.keys(row)) {
+        for (const key of searchKeys) {
           const val = row[key];
           if (val != null && String(val).toLowerCase().includes(searchLower)) {
             return true;
@@ -2228,6 +2225,36 @@ Total rows: ${data.length}`;
       }
     }
 
+    if (activeBuilderRules && activeBuilderRules.rules.length > 0 && !onFilterChangeRef.current) {
+      const { rules, logic } = activeBuilderRules;
+      result = result.filter((row) => {
+        if (row == null) return false;
+        const check = (rule: typeof rules[0]) => {
+          try {
+            const col = columnsLookupRef.current.find((c) => c.key === rule.column);
+            const cellRaw = (row as DataRecord)[col?.dataIndex ?? rule.column];
+            const cellStr = String(cellRaw ?? "").toLowerCase();
+            const opVal = rule.value.toLowerCase();
+            const numCell = Number(cellRaw);
+            const numOp = Number(rule.value);
+            switch (rule.operator) {
+              case "eq": return cellStr === opVal;
+              case "neq": return cellStr !== opVal;
+              case "gt": return !Number.isNaN(numCell) && !Number.isNaN(numOp) && numCell > numOp;
+              case "gte": return !Number.isNaN(numCell) && !Number.isNaN(numOp) && numCell >= numOp;
+              case "lt": return !Number.isNaN(numCell) && !Number.isNaN(numOp) && numCell < numOp;
+              case "lte": return !Number.isNaN(numCell) && !Number.isNaN(numOp) && numCell <= numOp;
+              case "contains": return cellStr.includes(opVal);
+              case "startsWith": return cellStr.startsWith(opVal);
+              case "endsWith": return cellStr.endsWith(opVal);
+              default: return cellStr.includes(opVal);
+            }
+          } catch { return true; }
+        };
+        return logic === "or" ? rules.some(check) : rules.every(check);
+      });
+    }
+
     if (!onSortChangeRef.current && sortState.length > 0) {
       const activeSorts = sortState.filter((s) => s.key && s.direction);
       if (activeSorts.length > 0) {
@@ -2264,7 +2291,7 @@ Total rows: ${data.length}`;
     }
 
     return result;
-  }, [data, sortState, columnFilters, globalSearchValue, internalGlobalSearch]);
+  }, [data, sortState, columnFilters, globalSearchValue, internalGlobalSearch, activeBuilderRules]);
 
   // ── AI post-processing layer ───────────────────────────────────────────
   const aiProcessedData = useMemo(() => {
@@ -2681,10 +2708,10 @@ Total rows: ${data.length}`;
     };
   }, [cellContextMenu]);
 
-  const columnFiltersKey = Object.keys(columnFilters)
-    .sort()
-    .map((k) => `${k}:${columnFilters[k]}`)
-    .join("|");
+  const columnFiltersKey = useMemo(
+    () => Object.keys(columnFilters).sort().map((k) => `${k}:${columnFilters[k]}`).join("|"),
+    [columnFilters],
+  );
   const activeGlobalSearch = globalSearchValue ?? internalGlobalSearch;
   React.useEffect(() => {
     setInternalPage(1);
@@ -2792,10 +2819,8 @@ Total rows: ${data.length}`;
     [],
   );
 
-  const rowVirtualizer = useVirtualizer({
-    count: displayData.length,
-    getScrollElement: () => tableAreaRef.current,
-    estimateSize: (index) => {
+  const estimateRowSize = useCallback(
+    (index: number) => {
       if (shimmerData) return rowHeight;
       const item = displayData[index];
       if (!item) return rowHeight;
@@ -2807,13 +2832,27 @@ Total rows: ${data.length}`;
       const cached = measuredExpandedHeights.current.get(key);
       return cached ? baseHeight + cached : baseHeight + expandedRowHeight;
     },
-    overscan: 5,
-    getItemKey: (index) => {
+    [shimmerData, displayData, rowHeight, enableDynamicRowHeight, resolvedExpandedKeys, expandedRowHeight],
+  );
+
+  const getItemKey = useCallback(
+    (index: number) => {
       if (shimmerData) return `__shimmer_${index}__`;
       const item = displayData[index];
       if (!item) return `__fallback_${index}__`;
       return getSafeRowKey(item, index);
     },
+    [shimmerData, displayData],
+  );
+
+  const getScrollElement = useCallback(() => tableAreaRef.current, []);
+
+  const rowVirtualizer = useVirtualizer({
+    count: displayData.length,
+    getScrollElement,
+    estimateSize: estimateRowSize,
+    overscan: 5,
+    getItemKey,
     paddingStart: pinnedTopHeight,
     paddingEnd: pinnedBottomHeight,
   });
@@ -2885,9 +2924,10 @@ Total rows: ${data.length}`;
     });
   }, [enableColumnVirtualization, visibleColumnRange, freshOrderedColumns]);
 
-  const resolvedExpandedKeysFingerprint = Array.from(resolvedExpandedKeys)
-    .sort()
-    .join(",");
+  const resolvedExpandedKeysFingerprint = useMemo(
+    () => Array.from(resolvedExpandedKeys).sort().join(","),
+    [resolvedExpandedKeys],
+  );
   React.useLayoutEffect(() => {
     rowVirtualizer.measure();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3030,16 +3070,6 @@ Total rows: ${data.length}`;
     ? emptyMinHeight
     : Math.min(naturalContentHeight, maxAutoHeight);
 
-  React.useEffect(() => {
-    if (!focusedCell) return;
-    const el = tableAreaRef.current;
-    if (!el) return;
-    const cell = el.querySelector<HTMLElement>(
-      `[data-bt-focused]`,
-    );
-    cell?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
-  }, [focusedCell]);
-
   return (
     <>
       <div
@@ -3121,11 +3151,6 @@ Total rows: ${data.length}`;
           @keyframes bt-ai-shimmer {
             0% { background-position: -200% 0; }
             100% { background-position: 200% 0; }
-          }
-          [data-bt-focused] {
-            outline: 2px solid ${accentColor};
-            outline-offset: -2px;
-            z-index: 12 !important;
           }
           [data-bt-check] {
             appearance: none;
@@ -4192,6 +4217,7 @@ Total rows: ${data.length}`;
                 onClick={() => {
                   setColumnFilters({});
                   onFilterChange?.({});
+                  setActiveBuilderRules(null);
                   setFilterBuilderRows([{ id: filterBuilderIdRef.current++, column: "", operator: "contains", value: "" }]);
                 }}
                 style={{
@@ -4564,58 +4590,7 @@ Total rows: ${data.length}`;
                 inset: 0,
                 overflow: "auto",
                 contain: "layout paint",
-                outline: "none",
               }}
-              onKeyDown={(e) => {
-                const maxRow = treeProcessedData.length - 1;
-                const maxCol = orderedColumns.length - 1;
-                if (maxRow < 0 || maxCol < 0) return;
-
-                const nav = (dr: number, dc: number) => {
-                  e.preventDefault();
-                  setFocusedCell((prev) => {
-                    const r = Math.max(0, Math.min(maxRow, (prev?.row ?? 0) + dr));
-                    const c = Math.max(0, Math.min(maxCol, (prev?.col ?? 0) + dc));
-                    return { row: r, col: c };
-                  });
-                };
-
-                switch (e.key) {
-                  case "ArrowDown": nav(1, 0); break;
-                  case "ArrowUp": nav(-1, 0); break;
-                  case "ArrowRight": nav(0, 1); break;
-                  case "ArrowLeft": nav(0, -1); break;
-                  case "Home":
-                    e.preventDefault();
-                    setFocusedCell((prev) => ({ row: prev?.row ?? 0, col: e.ctrlKey ? 0 : 0 }));
-                    break;
-                  case "End":
-                    e.preventDefault();
-                    setFocusedCell((prev) => ({ row: prev?.row ?? 0, col: maxCol }));
-                    break;
-                  case "Tab":
-                    if (focusedCell) {
-                      e.preventDefault();
-                      const dc = e.shiftKey ? -1 : 1;
-                      setFocusedCell((prev) => {
-                        if (!prev) return { row: 0, col: 0 };
-                        let c = prev.col + dc;
-                        let r = prev.row;
-                        if (c > maxCol) { c = 0; r = Math.min(r + 1, maxRow); }
-                        else if (c < 0) { c = maxCol; r = Math.max(r - 1, 0); }
-                        return { row: r, col: c };
-                      });
-                    }
-                    break;
-                  case "Escape":
-                    setFocusedCell(null);
-                    break;
-                }
-              }}
-              onFocus={() => {
-                if (!focusedCell) setFocusedCell({ row: 0, col: 0 });
-              }}
-              onBlur={() => setFocusedCell(null)}
             >
               <ResizeOverlay ref={resizeOverlayRef} accentColor={accentColor} />
 
@@ -5164,7 +5139,6 @@ Total rows: ${data.length}`;
                         ? handleRowDragStart
                         : undefined
                     }
-                    focusedCell={focusedCell}
                     enableRowAnimation={enableRowAnimation}
                     onGroupToggle={rowGrouping ? toggleGroup : undefined}
                     groupAccentColor={accentColor}
@@ -5546,7 +5520,6 @@ Total rows: ${data.length}`;
               display: "none",
               position: "fixed",
               zIndex: 99999,
-              height: 36,
               fontSize: "inherit",
               color: bt.color,
               alignItems: "center",
@@ -5646,18 +5619,17 @@ Total rows: ${data.length}`;
 
           let menuRecord: T | undefined;
           let menuRowIndex = 0;
-          const allRows = [
-            ...pinnedTopRows,
-            ...(displayData as T[]),
-            ...pinnedBottomRows,
-          ];
-          for (let i = 0; i < allRows.length; i++) {
-            if (allRows[i] == null) continue;
-            const rk = getSafeRowKey(allRows[i], i);
-            if (rk === cellContextMenu.rowKey) {
-              menuRecord = allRows[i];
-              menuRowIndex = i;
-              break;
+          const sources: T[][] = [pinnedTopRows, displayData as T[], pinnedBottomRows];
+          let globalIdx = 0;
+          outer: for (const src of sources) {
+            for (let i = 0; i < src.length; i++) {
+              if (src[i] == null) { globalIdx++; continue; }
+              if (getSafeRowKey(src[i], globalIdx) === cellContextMenu.rowKey) {
+                menuRecord = src[i];
+                menuRowIndex = globalIdx;
+                break outer;
+              }
+              globalIdx++;
             }
           }
 
