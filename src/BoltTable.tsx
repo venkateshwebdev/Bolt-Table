@@ -3166,9 +3166,29 @@ Total rows: ${data.length}`;
             margin: 0;
             vertical-align: middle;
           }
+          [data-bt-check][type="radio"] {
+            border-radius: 50%;
+          }
           [data-bt-check]:checked {
             background: ${accentColor};
             border-color: ${accentColor};
+          }
+          [data-bt-check][type="radio"]:checked {
+            background: transparent;
+            border-color: ${accentColor};
+            border-width: 1.5px;
+          }
+          [data-bt-check][type="radio"]:checked::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: ${accentColor};
+            transform: translate(-50%, -50%);
+            border: none;
           }
           [data-bt-check]:checked::after {
             content: '';
