@@ -154,6 +154,8 @@ interface BoltTableProps<T extends DataRecord = DataRecord> {
   /** Called when the user hides or shows a column via the context menu. */
   readonly onColumnHide?: (columnKey: string, hidden: boolean) => void;
 
+  readonly loadingCellsCount?: number;
+
   /** Determines the unique key for each row. Can be a string property name, function, number, or symbol. */
   readonly rowKey?: string | ((record: T) => string) | number | symbol;
 
@@ -562,6 +564,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   statusBarContent,
   rowDragEnabled = false,
   onRowReorder,
+  loadingCellsCount=15
 }: BoltTableProps<T>) {
   const wrapperRef = React.useRef<HTMLDivElement>(null);
 
@@ -2749,7 +2752,7 @@ Total rows: ${data.length}`;
     return unpinnedProcessedData.slice(start, start + pgSize);
   }, [unpinnedProcessedData, needsClientPagination, pgCurrent, pgSize]);
 
-  const shimmerCount = pgEnabled ? pgSize : 15;
+  const shimmerCount = pgEnabled ? pgSize : loadingCellsCount;
   const showShimmer = isLoading && treeProcessedData.length === 0;
   const shimmerRowKeyField = typeof rowKey === "string" ? rowKey : "id";
   const shimmerData = useMemo(() => {
@@ -4715,16 +4718,35 @@ Total rows: ${data.length}`;
                 onClick={
                   onRowClick || masterDetail
                     ? (e: React.MouseEvent) => {
+                        const sel = window.getSelection();
+                        if (sel && sel.type === "Range" && sel.toString().length > 0) return;
                         const target = e.target as HTMLElement;
-                        if (
-                          target.closest("input, button, a, select, textarea")
-                        )
-                          return;
                         const cell =
                           target.closest<HTMLElement>("[data-bt-cell]");
                         if (!cell) return;
                         const rk = cell.dataset.rowKey;
                         if (!rk) return;
+                        let el: HTMLElement | null = target;
+                        while (el && el !== cell) {
+                          const tag = el.tagName;
+                          if (
+                            tag === "INPUT" || tag === "BUTTON" || tag === "A" ||
+                            tag === "SELECT" || tag === "TEXTAREA" || tag === "LABEL" ||
+                            tag === "VIDEO" || tag === "AUDIO" || tag === "SUMMARY" ||
+                            tag === "DETAILS" || tag === "DIALOG" ||
+                            el.isContentEditable ||
+                            (el.hasAttribute("role") &&
+                              ["button", "link", "checkbox", "radio", "switch", "tab", "menuitem", "option", "combobox", "listbox", "spinbutton", "slider"]
+                                .includes(el.getAttribute("role")!)) ||
+                            (el.tabIndex >= 0 && el !== cell) ||
+                            el.hasAttribute("data-bt-check") ||
+                            el.hasAttribute("data-bt-grip") ||
+                            el.hasAttribute("data-bt-row-grip") ||
+                            el.hasAttribute("data-bt-resize") ||
+                            el.draggable
+                          ) return;
+                          el = el.parentElement;
+                        }
                         const findAndHandle = (row: T, i: number) => {
                           onRowClick?.(row, i, e);
                           if (masterDetail) setMasterDetailRecord(row);
@@ -5549,7 +5571,7 @@ Total rows: ${data.length}`;
               display: "none",
               position: "fixed",
               zIndex: 99999,
-              fontSize: "inherit",
+              fontSize: 13,
               color: bt.color,
               alignItems: "center",
               overflow: "hidden",
