@@ -4874,44 +4874,58 @@ Total rows: ${data.length}`;
                           }}
                         >
                           {rowSelection.type !== "radio" &&
-                            !rowSelection.hideSelectAll && (
-                              <input
-                                data-bt-check=""
-                                type="checkbox"
-                                checked={
-                                  dataLength > 0 &&
-                                  normalizedSelectedKeys.length === dataLength
-                                }
-                                ref={(input) => {
-                                  if (input) {
-                                    input.indeterminate =
-                                      normalizedSelectedKeys.length > 0 &&
-                                      normalizedSelectedKeys.length <
-                                        dataLength;
-                                  }
-                                }}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    const allKeys = data.map((row, idx) =>
-                                      getRawRowKey(row, idx),
-                                    );
-                                    rowSelection.onSelectAll?.(
-                                      true,
-                                      data,
-                                      data,
-                                    );
-                                    rowSelection.onChange?.(allKeys, data, {
-                                      type: "all",
-                                    });
-                                  } else {
-                                    rowSelection.onSelectAll?.(false, [], data);
-                                    rowSelection.onChange?.([], [], {
-                                      type: "all",
-                                    });
-                                  }
-                                }}
-                              />
-                            )}
+                            !rowSelection.hideSelectAll && (() => {
+                              const pageRows = paginatedData as T[];
+                              const pageRawKeys = pageRows.map((row, idx) => getRawRowKey(row, idx));
+                              const pageKeyStrSet = new Set(pageRawKeys.map((k) => String(k)));
+                              const selectedSet = new Set(normalizedSelectedKeys);
+                              let pageSelectedCount = 0;
+                              for (const k of pageRawKeys) {
+                                if (selectedSet.has(String(k))) pageSelectedCount++;
+                              }
+                              const allChecked = pageRawKeys.length > 0 && pageSelectedCount === pageRawKeys.length;
+                              const isIndeterminate = pageSelectedCount > 0 && pageSelectedCount < pageRawKeys.length;
+                              return (
+                                <input
+                                  data-bt-check=""
+                                  type="checkbox"
+                                  checked={allChecked}
+                                  ref={(input) => {
+                                    if (input) input.indeterminate = isIndeterminate;
+                                  }}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      const merged: React.Key[] = [];
+                                      const seen = new Set<string>();
+                                      for (const k of rowSelection.selectedRowKeys ?? []) {
+                                        const s = String(k);
+                                        if (!seen.has(s)) { seen.add(s); merged.push(k); }
+                                      }
+                                      for (const k of pageRawKeys) {
+                                        const s = String(k);
+                                        if (!seen.has(s)) { seen.add(s); merged.push(k); }
+                                      }
+                                      const mergedRows: T[] = [];
+                                      const pageRowByKey = new Map<string, T>();
+                                      pageRows.forEach((r, i) => pageRowByKey.set(String(pageRawKeys[i]), r));
+                                      for (const k of merged) {
+                                        const s = String(k);
+                                        const r = pageRowByKey.get(s);
+                                        if (r) mergedRows.push(r);
+                                      }
+                                      rowSelection.onSelectAll?.(true, mergedRows, pageRows);
+                                      rowSelection.onChange?.(merged, mergedRows, { type: "all" });
+                                    } else {
+                                      const remaining = (rowSelection.selectedRowKeys ?? []).filter(
+                                        (k) => !pageKeyStrSet.has(String(k)),
+                                      );
+                                      rowSelection.onSelectAll?.(false, [], pageRows);
+                                      rowSelection.onChange?.(remaining, [], { type: "all" });
+                                    }
+                                  }}
+                                />
+                              );
+                            })()}
                         </div>
                       );
                     }
