@@ -1086,7 +1086,9 @@ const TableBody: React.FC<TableBodyProps> = ({
             gridRow: bodyGridRow,
             height: `${totalSize}px`,
             position: "relative",
-            zIndex: 15,
+            // Must stay below the sticky header (zIndex 10 / pinned 13) so
+            // the header always renders on top when the body scrolls.
+            zIndex: 2,
             pointerEvents: "none",
           }}
         >
@@ -1117,7 +1119,7 @@ const TableBody: React.FC<TableBodyProps> = ({
                 style={{
                   position: "sticky",
                   left: 0,
-                  zIndex: 5,
+                  zIndex: 1,
                   width:
                     scrollAreaWidth && scrollAreaWidth > 0
                       ? `${scrollAreaWidth}px`

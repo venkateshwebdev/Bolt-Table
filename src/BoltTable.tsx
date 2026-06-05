@@ -198,7 +198,7 @@ interface BoltTableProps<T extends DataRecord = DataRecord> {
   /** Custom items to append to the column header right-click context menu. */
   readonly columnContextMenuItems?: ColumnContextMenuItem[];
 
-  /** Controls table height. True: auto-sizes to content (max 10 rows). False: fills parent container. */
+  /** Controls table height. True (default): auto-sizes to content (max 10 rows). False: fills parent container; if the parent has no resolvable height, automatically falls back to content sizing so rows remain visible. */
   readonly autoHeight?: boolean;
 
   /** When true, renders a full shimmer skeleton layout before column widths are calculated. */
@@ -567,6 +567,46 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   loadingCellsCount=15
 }: BoltTableProps<T>) {
   const wrapperRef = React.useRef<HTMLDivElement>(null);
+
+  // When autoHeight=false, we measure the parent's available height. The
+  // table then sizes itself to its content but never grows past that cap, so:
+  //   - if content is shorter than the parent, no rows of empty space below
+  //   - if content is taller than the parent, the body scrolls inside
+  //   - if the parent has no resolvable height, fall back to a content cap
+  //     (same as autoHeight=true) so rows are still visible
+  const [parentAvailableHeight, setParentAvailableHeight] = React.useState(0);
+  React.useLayoutEffect(() => {
+    if (autoHeight) {
+      setParentAvailableHeight(0);
+      return;
+    }
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+    const parent = wrapper.parentElement;
+    if (!parent) return;
+
+    let measuring = false;
+    const measure = () => {
+      if (measuring) return;
+      measuring = true;
+      // Take wrapper out of flow so it doesn't influence parent height,
+      // then read parent's intrinsic / explicit height.
+      const prevPosition = wrapper.style.position;
+      const prevVisibility = wrapper.style.visibility;
+      wrapper.style.position = "absolute";
+      wrapper.style.visibility = "hidden";
+      const parentHeight = parent.clientHeight;
+      wrapper.style.position = prevPosition;
+      wrapper.style.visibility = prevVisibility;
+      setParentAvailableHeight(parentHeight);
+      measuring = false;
+    };
+
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(parent);
+    return () => ro.disconnect();
+  }, [autoHeight]);
 
   const [systemDark, setSystemDark] = React.useState(() =>
     typeof window !== "undefined" ? window.matchMedia("(prefers-color-scheme: dark)").matches : false,
@@ -3067,11 +3107,22 @@ Total rows: ${data.length}`;
   const naturalContentHeight = virtualTotalSize + HEADER_HEIGHT;
   const maxAutoHeight = MAX_AUTO_ROWS * rowHeight + HEADER_HEIGHT;
   const isEmpty = displayData.length === 0 && !showShimmer;
-  const emptyMinHeight = 4 * rowHeight + HEADER_HEIGHT;
+  // Just enough room for the header + a short "No data" message.
+  const emptyMinHeight = HEADER_HEIGHT + 80;
+
+  // The hard cap on the table's height:
+  //   - autoHeight=true: 10 rows + header (legacy behavior)
+  //   - autoHeight=false with a sized parent: the parent's height
+  //   - autoHeight=false with an unsized parent: same fallback as autoHeight=true
+  const heightCap = autoHeight
+    ? maxAutoHeight
+    : parentAvailableHeight > 0
+      ? parentAvailableHeight
+      : maxAutoHeight;
 
   const clampedAutoHeight = isEmpty
-    ? emptyMinHeight
-    : Math.min(naturalContentHeight, maxAutoHeight);
+    ? Math.min(emptyMinHeight, heightCap)
+    : Math.min(naturalContentHeight, heightCap);
 
   return (
     <>
@@ -3088,7 +3139,7 @@ Total rows: ${data.length}`;
           background: bt.bg,
           colorScheme: isDark ? "dark" : "light",
           position: "relative",
-          ...(autoHeight ? { maxHeight: "100%" } : { height: "100%" }),
+          maxHeight: "100%",
           ...styles.wrapper,
         }}
       >
@@ -4480,14 +4531,10 @@ Total rows: ${data.length}`;
         <div
           style={{
             position: "relative",
-            ...(autoHeight
-              ? {
-                  height: `${clampedAutoHeight}px`,
-                  maxHeight: `${clampedAutoHeight}px`,
-                  flexShrink: 1,
-                  flexGrow: 0,
-                }
-              : { flex: "1 1 0%" }),
+            height: `${clampedAutoHeight}px`,
+            maxHeight: `${clampedAutoHeight}px`,
+            flexShrink: 1,
+            flexGrow: 0,
           }}
         >
           {layoutLoading ? (
