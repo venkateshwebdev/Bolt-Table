@@ -198,7 +198,11 @@ interface BoltTableProps<T extends DataRecord = DataRecord> {
   /** Custom items to append to the column header right-click context menu. */
   readonly columnContextMenuItems?: ColumnContextMenuItem[];
 
-  /** Controls table height. True (default): auto-sizes to content (max 10 rows). False: fills parent container; if the parent has no resolvable height, automatically falls back to content sizing so rows remain visible. */
+  /**
+   * @deprecated The table now auto-detects: it fills the parent when the
+   * parent has its own height, and falls back to content sizing (capped at
+   * 10 rows) when the parent has no resolvable height. This prop is ignored.
+   */
   readonly autoHeight?: boolean;
 
   /** When true, renders a full shimmer skeleton layout before column widths are calculated. */
@@ -526,7 +530,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   onMultiSortChange,
   onFilterChange,
   columnContextMenuItems,
-  autoHeight = true,
   layoutLoading,
   emptyRenderer,
   rowClassName,
@@ -568,18 +571,13 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
 }: BoltTableProps<T>) {
   const wrapperRef = React.useRef<HTMLDivElement>(null);
 
-  // When autoHeight=false, we measure the parent's available height. The
-  // table then sizes itself to its content but never grows past that cap, so:
-  //   - if content is shorter than the parent, no rows of empty space below
-  //   - if content is taller than the parent, the body scrolls inside
-  //   - if the parent has no resolvable height, fall back to a content cap
-  //     (same as autoHeight=true) so rows are still visible
+  // Auto-detect the parent's own height. If removing the table from layout
+  // flow doesn't shrink the parent, the parent has its own height (explicit
+  // or stretched by a flex/grid ancestor) and the table fills it. Otherwise
+  // the parent is content-driven and we fall back to content sizing so the
+  // table doesn't collapse to 0 or get pinned to a sibling's height.
   const [parentAvailableHeight, setParentAvailableHeight] = React.useState(0);
   React.useLayoutEffect(() => {
-    if (autoHeight) {
-      setParentAvailableHeight(0);
-      return;
-    }
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
     const parent = wrapper.parentElement;
@@ -589,16 +587,16 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     const measure = () => {
       if (measuring) return;
       measuring = true;
-      // Take wrapper out of flow so it doesn't influence parent height,
-      // then read parent's intrinsic / explicit height.
+      const heightWithTable = parent.clientHeight;
       const prevPosition = wrapper.style.position;
       const prevVisibility = wrapper.style.visibility;
       wrapper.style.position = "absolute";
       wrapper.style.visibility = "hidden";
-      const parentHeight = parent.clientHeight;
+      const heightWithoutTable = parent.clientHeight;
       wrapper.style.position = prevPosition;
       wrapper.style.visibility = prevVisibility;
-      setParentAvailableHeight(parentHeight);
+      const parentHasOwnHeight = heightWithoutTable >= heightWithTable;
+      setParentAvailableHeight(parentHasOwnHeight ? heightWithoutTable : 0);
       measuring = false;
     };
 
@@ -606,7 +604,7 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     const ro = new ResizeObserver(measure);
     ro.observe(parent);
     return () => ro.disconnect();
-  }, [autoHeight]);
+  }, []);
 
   const [systemDark, setSystemDark] = React.useState(() =>
     typeof window !== "undefined" ? window.matchMedia("(prefers-color-scheme: dark)").matches : false,
@@ -3113,13 +3111,9 @@ Total rows: ${data.length}`;
     ? emptyMinHeight
     : Math.min(naturalContentHeight, maxAutoHeight);
 
-  // Use content-sized layout when:
-  //   - autoHeight is true (default), OR
-  //   - autoHeight is false but the parent has no resolvable height (so the
-  //     table doesn't collapse to 0 and render nothing).
-  // Otherwise (autoHeight=false with a sized parent), the table fills the
-  // parent exactly.
-  const useContentHeight = autoHeight || parentAvailableHeight <= 0;
+  // Use content-sized layout only when the parent has no resolvable height
+  // (so the table doesn't collapse to 0). Otherwise fill the parent.
+  const useContentHeight = parentAvailableHeight <= 0;
 
   return (
     <>
