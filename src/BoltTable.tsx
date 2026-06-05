@@ -3107,22 +3107,19 @@ Total rows: ${data.length}`;
   const naturalContentHeight = virtualTotalSize + HEADER_HEIGHT;
   const maxAutoHeight = MAX_AUTO_ROWS * rowHeight + HEADER_HEIGHT;
   const isEmpty = displayData.length === 0 && !showShimmer;
-  // Just enough room for the header + a short "No data" message.
-  const emptyMinHeight = HEADER_HEIGHT + 80;
-
-  // The hard cap on the table's height:
-  //   - autoHeight=true: 10 rows + header (legacy behavior)
-  //   - autoHeight=false with a sized parent: the parent's height
-  //   - autoHeight=false with an unsized parent: same fallback as autoHeight=true
-  const heightCap = autoHeight
-    ? maxAutoHeight
-    : parentAvailableHeight > 0
-      ? parentAvailableHeight
-      : maxAutoHeight;
+  const emptyMinHeight = 4 * rowHeight + HEADER_HEIGHT;
 
   const clampedAutoHeight = isEmpty
-    ? Math.min(emptyMinHeight, heightCap)
-    : Math.min(naturalContentHeight, heightCap);
+    ? emptyMinHeight
+    : Math.min(naturalContentHeight, maxAutoHeight);
+
+  // Use content-sized layout when:
+  //   - autoHeight is true (default), OR
+  //   - autoHeight is false but the parent has no resolvable height (so the
+  //     table doesn't collapse to 0 and render nothing).
+  // Otherwise (autoHeight=false with a sized parent), the table fills the
+  // parent exactly.
+  const useContentHeight = autoHeight || parentAvailableHeight <= 0;
 
   return (
     <>
@@ -3139,7 +3136,7 @@ Total rows: ${data.length}`;
           background: bt.bg,
           colorScheme: isDark ? "dark" : "light",
           position: "relative",
-          maxHeight: "100%",
+          ...(useContentHeight ? { maxHeight: "100%" } : { height: "100%" }),
           ...styles.wrapper,
         }}
       >
@@ -4531,10 +4528,14 @@ Total rows: ${data.length}`;
         <div
           style={{
             position: "relative",
-            height: `${clampedAutoHeight}px`,
-            maxHeight: `${clampedAutoHeight}px`,
-            flexShrink: 1,
-            flexGrow: 0,
+            ...(useContentHeight
+              ? {
+                  height: `${clampedAutoHeight}px`,
+                  maxHeight: `${clampedAutoHeight}px`,
+                  flexShrink: 1,
+                  flexGrow: 0,
+                }
+              : { flex: "1 1 0%" }),
           }}
         >
           {layoutLoading ? (
