@@ -571,12 +571,10 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
 }: BoltTableProps<T>) {
   const wrapperRef = React.useRef<HTMLDivElement>(null);
 
-  // Auto-detect the parent's own height. If removing the table from layout
-  // flow doesn't shrink the parent, the parent has its own height (explicit
-  // or stretched by a flex/grid ancestor) and the table fills it. Otherwise
-  // the parent is content-driven and we fall back to content sizing so the
-  // table doesn't collapse to 0 or get pinned to a sibling's height.
-  const [parentAvailableHeight, setParentAvailableHeight] = React.useState(0);
+  // Auto-detect the parent's own height. Until measured, prefer fill-parent
+  // mode to avoid initial SSR/client layout jumps in containers that do have
+  // an explicit height.
+  const [parentAvailableHeight, setParentAvailableHeight] = React.useState<number | null>(null);
   React.useLayoutEffect(() => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
@@ -2128,6 +2126,14 @@ Total rows: ${data.length}`;
   const [showSearchHistory, setShowSearchHistory] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  const setGlobalSearchValue = useCallback(
+    (value: string) => {
+      setInternalGlobalSearch(value);
+      onGlobalSearchChange?.(value);
+    },
+    [onGlobalSearchChange],
+  );
+
   const addToSearchHistory = useCallback((term: string) => {
     if (!term.trim()) return;
     setSearchHistory((prev) => {
@@ -3112,8 +3118,9 @@ Total rows: ${data.length}`;
     : Math.min(naturalContentHeight, maxAutoHeight);
 
   // Use content-sized layout only when the parent has no resolvable height
-  // (so the table doesn't collapse to 0). Otherwise fill the parent.
-  const useContentHeight = parentAvailableHeight <= 0;
+  // (so the table doesn't collapse to 0). Unknown measurement defaults to
+  // fill-parent mode to prevent first-paint layout shift.
+  const useContentHeight = parentAvailableHeight === 0;
 
   return (
     <>
@@ -3357,8 +3364,7 @@ Total rows: ${data.length}`;
                     value={globalSearchValue ?? internalGlobalSearch}
                     onChange={(e) => {
                       const v = e.target.value;
-                      if (onGlobalSearchChange) onGlobalSearchChange(v);
-                      else setInternalGlobalSearch(v);
+                      setGlobalSearchValue(v);
                     }}
                     onFocus={() => {
                       if (searchHistory.length > 0) setShowSearchHistory(true);
@@ -3425,8 +3431,7 @@ Total rows: ${data.length}`;
                           onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "transparent"; }}
                           onMouseDown={(e) => {
                             e.preventDefault();
-                            if (onGlobalSearchChange) onGlobalSearchChange(term);
-                            else setInternalGlobalSearch(term);
+                            setGlobalSearchValue(term);
                             setShowSearchHistory(false);
                           }}
                         >
@@ -3439,8 +3444,7 @@ Total rows: ${data.length}`;
                     <button
                       type="button"
                       onClick={() => {
-                        if (onGlobalSearchChange) onGlobalSearchChange("");
-                        else setInternalGlobalSearch("");
+                        setGlobalSearchValue("");
                       }}
                       style={{
                         display: "flex",
