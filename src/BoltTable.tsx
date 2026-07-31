@@ -581,10 +581,15 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
     const parent = wrapper.parentElement;
     if (!parent) return;
 
-    let measuring = false;
+    let ro: ResizeObserver | null = null;
+    let rafId: number | null = null;
+
     const measure = () => {
-      if (measuring) return;
-      measuring = true;
+      rafId = null;
+      // Pause observation while probing so the probe's own style mutations
+      // (which momentarily resize the parent) don't re-trigger this callback
+      // and spin a ResizeObserver feedback loop.
+      ro?.disconnect();
       const heightWithTable = parent.clientHeight;
       const prevPosition = wrapper.style.position;
       const prevVisibility = wrapper.style.visibility;
@@ -593,15 +598,29 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
       const heightWithoutTable = parent.clientHeight;
       wrapper.style.position = prevPosition;
       wrapper.style.visibility = prevVisibility;
-      const parentHasOwnHeight = heightWithoutTable >= heightWithTable;
+      // The parent "owns" its height only when removing the table from flow
+      // does not shrink it — i.e. its height comes from an ancestor/explicit
+      // size, not from this table's content. A parent that collapses to 0
+      // without the table (e.g. the content-sized cell of another table's
+      // expanded row) has no usable height, so we fall back to content sizing.
+      const parentHasOwnHeight =
+        heightWithoutTable > 0 && heightWithoutTable >= heightWithTable;
       setParentAvailableHeight(parentHasOwnHeight ? heightWithoutTable : 0);
-      measuring = false;
+      if (parent.isConnected) ro?.observe(parent);
+    };
+
+    const schedule = () => {
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(measure);
     };
 
     measure();
-    const ro = new ResizeObserver(measure);
+    ro = new ResizeObserver(schedule);
     ro.observe(parent);
-    return () => ro.disconnect();
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      ro?.disconnect();
+    };
   }, []);
 
   const [systemDark, setSystemDark] = React.useState(() =>
@@ -3122,6 +3141,15 @@ Total rows: ${data.length}`;
   // fill-parent mode to prevent first-paint layout shift.
   const useContentHeight = parentAvailableHeight === 0;
 
+  // Fallback floor used while the parent height is still unknown (SSR / first
+  // paint) or can never be resolved (e.g. a Bolt table nested inside another
+  // table's expanded row, where the surrounding cell is content-sized). It
+  // keeps at least the natural content height (capped at MAX_AUTO_ROWS, or a
+  // few empty rows) so the body never collapses to 0 and the table is never
+  // "missed". A parent with a real definite height grows past this floor, so
+  // sized containers are unaffected and there is no layout shift.
+  const fallbackHeight = clampedAutoHeight;
+
   return (
     <>
       <div
@@ -4533,7 +4561,15 @@ Total rows: ${data.length}`;
                   flexShrink: 1,
                   flexGrow: 0,
                 }
-              : { flex: "1 1 0%" }),
+              : {
+                  flex: "1 1 0%",
+                  // Guarantee the body is visible until (or unless) the parent
+                  // height resolves. A sized parent overrides this via flex-grow
+                  // with no layout shift; a height-less parent keeps the floor.
+                  ...(parentAvailableHeight === null
+                    ? { minHeight: `${fallbackHeight}px` }
+                    : {}),
+                }),
           }}
         >
           {layoutLoading ? (
