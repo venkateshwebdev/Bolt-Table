@@ -571,25 +571,22 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
 }: BoltTableProps<T>) {
   const wrapperRef = React.useRef<HTMLDivElement>(null);
 
-  // Auto-detect the parent's own height. Until measured, prefer fill-parent
-  // mode to avoid initial SSR/client layout jumps in containers that do have
-  // an explicit height.
-  const [parentAvailableHeight, setParentAvailableHeight] = React.useState<number | null>(null);
+  // Auto-detect the parent's own height. If removing the table from layout
+  // flow doesn't shrink the parent, the parent has its own height (explicit
+  // or stretched by a flex/grid ancestor) and the table fills it. Otherwise
+  // the parent is content-driven and we fall back to content sizing so the
+  // table doesn't collapse to 0 or get pinned to a sibling's height.
+  const [parentAvailableHeight, setParentAvailableHeight] = React.useState(0);
   React.useLayoutEffect(() => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
     const parent = wrapper.parentElement;
     if (!parent) return;
 
-    let ro: ResizeObserver | null = null;
-    let rafId: number | null = null;
-
+    let measuring = false;
     const measure = () => {
-      rafId = null;
-      // Pause observation while probing so the probe's own style mutations
-      // (which momentarily resize the parent) don't re-trigger this callback
-      // and spin a ResizeObserver feedback loop.
-      ro?.disconnect();
+      if (measuring) return;
+      measuring = true;
       const heightWithTable = parent.clientHeight;
       const prevPosition = wrapper.style.position;
       const prevVisibility = wrapper.style.visibility;
@@ -598,29 +595,15 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
       const heightWithoutTable = parent.clientHeight;
       wrapper.style.position = prevPosition;
       wrapper.style.visibility = prevVisibility;
-      // The parent "owns" its height only when removing the table from flow
-      // does not shrink it — i.e. its height comes from an ancestor/explicit
-      // size, not from this table's content. A parent that collapses to 0
-      // without the table (e.g. the content-sized cell of another table's
-      // expanded row) has no usable height, so we fall back to content sizing.
-      const parentHasOwnHeight =
-        heightWithoutTable > 0 && heightWithoutTable >= heightWithTable;
+      const parentHasOwnHeight = heightWithoutTable >= heightWithTable;
       setParentAvailableHeight(parentHasOwnHeight ? heightWithoutTable : 0);
-      if (parent.isConnected) ro?.observe(parent);
-    };
-
-    const schedule = () => {
-      if (rafId !== null) return;
-      rafId = requestAnimationFrame(measure);
+      measuring = false;
     };
 
     measure();
-    ro = new ResizeObserver(schedule);
+    const ro = new ResizeObserver(measure);
     ro.observe(parent);
-    return () => {
-      if (rafId !== null) cancelAnimationFrame(rafId);
-      ro?.disconnect();
-    };
+    return () => ro.disconnect();
   }, []);
 
   const [systemDark, setSystemDark] = React.useState(() =>
@@ -2145,14 +2128,6 @@ Total rows: ${data.length}`;
   const [showSearchHistory, setShowSearchHistory] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const setGlobalSearchValue = useCallback(
-    (value: string) => {
-      setInternalGlobalSearch(value);
-      onGlobalSearchChange?.(value);
-    },
-    [onGlobalSearchChange],
-  );
-
   const addToSearchHistory = useCallback((term: string) => {
     if (!term.trim()) return;
     setSearchHistory((prev) => {
@@ -3137,18 +3112,8 @@ Total rows: ${data.length}`;
     : Math.min(naturalContentHeight, maxAutoHeight);
 
   // Use content-sized layout only when the parent has no resolvable height
-  // (so the table doesn't collapse to 0). Unknown measurement defaults to
-  // fill-parent mode to prevent first-paint layout shift.
-  const useContentHeight = parentAvailableHeight === 0;
-
-  // Fallback floor used while the parent height is still unknown (SSR / first
-  // paint) or can never be resolved (e.g. a Bolt table nested inside another
-  // table's expanded row, where the surrounding cell is content-sized). It
-  // keeps at least the natural content height (capped at MAX_AUTO_ROWS, or a
-  // few empty rows) so the body never collapses to 0 and the table is never
-  // "missed". A parent with a real definite height grows past this floor, so
-  // sized containers are unaffected and there is no layout shift.
-  const fallbackHeight = clampedAutoHeight;
+  // (so the table doesn't collapse to 0). Otherwise fill the parent.
+  const useContentHeight = parentAvailableHeight <= 0;
 
   return (
     <>
@@ -3392,7 +3357,8 @@ Total rows: ${data.length}`;
                     value={globalSearchValue ?? internalGlobalSearch}
                     onChange={(e) => {
                       const v = e.target.value;
-                      setGlobalSearchValue(v);
+                      if (onGlobalSearchChange) onGlobalSearchChange(v);
+                      else setInternalGlobalSearch(v);
                     }}
                     onFocus={() => {
                       if (searchHistory.length > 0) setShowSearchHistory(true);
@@ -3459,7 +3425,8 @@ Total rows: ${data.length}`;
                           onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "transparent"; }}
                           onMouseDown={(e) => {
                             e.preventDefault();
-                            setGlobalSearchValue(term);
+                            if (onGlobalSearchChange) onGlobalSearchChange(term);
+                            else setInternalGlobalSearch(term);
                             setShowSearchHistory(false);
                           }}
                         >
@@ -3472,7 +3439,8 @@ Total rows: ${data.length}`;
                     <button
                       type="button"
                       onClick={() => {
-                        setGlobalSearchValue("");
+                        if (onGlobalSearchChange) onGlobalSearchChange("");
+                        else setInternalGlobalSearch("");
                       }}
                       style={{
                         display: "flex",
@@ -4561,15 +4529,7 @@ Total rows: ${data.length}`;
                   flexShrink: 1,
                   flexGrow: 0,
                 }
-              : {
-                  flex: "1 1 0%",
-                  // Guarantee the body is visible until (or unless) the parent
-                  // height resolves. A sized parent overrides this via flex-grow
-                  // with no layout shift; a height-less parent keeps the floor.
-                  ...(parentAvailableHeight === null
-                    ? { minHeight: `${fallbackHeight}px` }
-                    : {}),
-                }),
+              : { flex: "1 1 0%" }),
           }}
         >
           {layoutLoading ? (
