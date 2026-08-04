@@ -29,9 +29,9 @@
     "react-dom": ">=18"
   },
   "devDependencies": {
-    "@types/react": "^18.0.0",
-    "@types/react-dom": "^19.2.3",
-    "tsup": "^8.0.0",
-    "typescript": "^5.0.0"
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^19.2.4",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3"
   }
 }
