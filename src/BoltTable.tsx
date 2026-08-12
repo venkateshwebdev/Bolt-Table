@@ -497,6 +497,31 @@ const EMPTY_STYLES: StylesTypes = {};
 const STABLE_EMPTY_DATA: readonly any[] = [];
 const STABLE_EMPTY_COLS: readonly any[] = [];
 
+// Fully static; hoisted so the string isn't rebuilt on every render.
+const SCROLLBAR_CSS = `
+          [data-bt-scroll]::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+          }
+          [data-bt-scroll]::-webkit-scrollbar-track {
+            background: transparent;
+          }
+          [data-bt-scroll]::-webkit-scrollbar-thumb {
+            background: rgba(128,128,128,0.3);
+            border-radius: 3px;
+          }
+          [data-bt-scroll]::-webkit-scrollbar-thumb:hover {
+            background: rgba(128,128,128,0.5);
+          }
+          [data-bt-scroll]::-webkit-scrollbar-corner {
+            background: transparent;
+          }
+          [data-bt-scroll] {
+            scrollbar-width: thin;
+            scrollbar-color: rgba(128,128,128,0.3) transparent;
+          }
+        `;
+
 export default function BoltTable<T extends DataRecord = DataRecord>({
   columns: rawInitialColumns,
   data: rawData,
@@ -570,41 +595,6 @@ export default function BoltTable<T extends DataRecord = DataRecord>({
   loadingCellsCount=15
 }: BoltTableProps<T>) {
   const wrapperRef = React.useRef<HTMLDivElement>(null);
-
-  // Auto-detect the parent's own height. If removing the table from layout
-  // flow doesn't shrink the parent, the parent has its own height (explicit
-  // or stretched by a flex/grid ancestor) and the table fills it. Otherwise
-  // the parent is content-driven and we fall back to content sizing so the
-  // table doesn't collapse to 0 or get pinned to a sibling's height.
-  const [parentAvailableHeight, setParentAvailableHeight] = React.useState(0);
-  React.useLayoutEffect(() => {
-    const wrapper = wrapperRef.current;
-    if (!wrapper) return;
-    const parent = wrapper.parentElement;
-    if (!parent) return;
-
-    let measuring = false;
-    const measure = () => {
-      if (measuring) return;
-      measuring = true;
-      const heightWithTable = parent.clientHeight;
-      const prevPosition = wrapper.style.position;
-      const prevVisibility = wrapper.style.visibility;
-      wrapper.style.position = "absolute";
-      wrapper.style.visibility = "hidden";
-      const heightWithoutTable = parent.clientHeight;
-      wrapper.style.position = prevPosition;
-      wrapper.style.visibility = prevVisibility;
-      const parentHasOwnHeight = heightWithoutTable >= heightWithTable;
-      setParentAvailableHeight(parentHasOwnHeight ? heightWithoutTable : 0);
-      measuring = false;
-    };
-
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(parent);
-    return () => ro.disconnect();
-  }, []);
 
   const [systemDark, setSystemDark] = React.useState(() =>
     typeof window !== "undefined" ? window.matchMedia("(prefers-color-scheme: dark)").matches : false,
@@ -3111,30 +3101,12 @@ Total rows: ${data.length}`;
     ? emptyMinHeight
     : Math.min(naturalContentHeight, maxAutoHeight);
 
-  // Use content-sized layout only when the parent has no resolvable height
-  // (so the table doesn't collapse to 0). Otherwise fill the parent.
-  const useContentHeight = parentAvailableHeight <= 0;
-
-  return (
-    <>
-      <div
-        ref={wrapperRef}
-        className={`${className ?? ""} ${classNames.wrapper ?? ""}`}
-        style={{
-          display: "flex",
-          width: "100%",
-          flexDirection: "column",
-          fontSize: "inherit",
-          fontWeight: 400,
-          color: bt.color,
-          background: bt.bg,
-          colorScheme: isDark ? "dark" : "light",
-          position: "relative",
-          ...(useContentHeight ? { maxHeight: "100%" } : { height: "100%" }),
-          ...styles.wrapper,
-        }}
-      >
-        <style>{`
+  const pinnedBg = styles.pinnedBg;
+  const rowHoverBg = styles.rowHover?.backgroundColor;
+  const rowSelectedBg = styles.rowSelected?.backgroundColor;
+  const cellPointer = !!(onRowClick || masterDetail);
+  const dynamicCss = useMemo(
+    () => `
           @keyframes bt-pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }
@@ -3145,18 +3117,18 @@ Total rows: ${data.length}`;
             -webkit-backdrop-filter: blur(8px);
           }
           :where([data-bt-pinned]:not([data-bt-header])) {
-            background-color: ${styles.pinnedBg ?? "rgba(128,128,128,0.06)"};
+            background-color: ${pinnedBg ?? "rgba(128,128,128,0.06)"};
             backdrop-filter: blur(8px);
             -webkit-backdrop-filter: blur(8px);
           }
           [data-row-key][data-hover] > div {
-            background-color: ${styles.rowHover?.backgroundColor ?? "rgba(128, 128, 128, 0.1)"};
+            background-color: ${rowHoverBg ?? "rgba(128, 128, 128, 0.1)"};
           }
           [data-row-key][data-selected] > div {
-            background-color: ${styles.rowSelected?.backgroundColor ?? `${accentColor}15`};
+            background-color: ${rowSelectedBg ?? `${accentColor}15`};
           }
           [data-row-key][data-selected][data-hover] > div {
-            background-color: ${styles.rowSelected?.backgroundColor ?? `${accentColor}25`};
+            background-color: ${rowSelectedBg ?? `${accentColor}25`};
           }
           [data-bt-header]:hover [data-bt-grip] {
             opacity: 0.8 !important;
@@ -3176,7 +3148,7 @@ Total rows: ${data.length}`;
           [data-bt-header][data-drag-over] {
             border: 1px dashed ${accentColor} !important;
           }
-          ${onRowClick || masterDetail ? "[data-bt-cell] { cursor: pointer; }" : ""}
+          ${cellPointer ? "[data-bt-cell] { cursor: pointer; }" : ""}
           [data-row-drag-over] {
             box-shadow: 0 -2px 0 0 ${accentColor} inset;
           }
@@ -3273,30 +3245,33 @@ Total rows: ${data.length}`;
             opacity: 0.4;
             cursor: not-allowed;
           }
-        `}</style>
-        <style>{`
-          [data-bt-scroll]::-webkit-scrollbar {
-            width: 6px;
-            height: 6px;
-          }
-          [data-bt-scroll]::-webkit-scrollbar-track {
-            background: transparent;
-          }
-          [data-bt-scroll]::-webkit-scrollbar-thumb {
-            background: rgba(128,128,128,0.3);
-            border-radius: 3px;
-          }
-          [data-bt-scroll]::-webkit-scrollbar-thumb:hover {
-            background: rgba(128,128,128,0.5);
-          }
-          [data-bt-scroll]::-webkit-scrollbar-corner {
-            background: transparent;
-          }
-          [data-bt-scroll] {
-            scrollbar-width: thin;
-            scrollbar-color: rgba(128,128,128,0.3) transparent;
-          }
-        `}</style>
+        `,
+    [accentColor, pinnedBg, rowHoverBg, rowSelectedBg, cellPointer],
+  );
+
+  return (
+    <>
+      <div
+        ref={wrapperRef}
+        className={`${className ?? ""} ${classNames.wrapper ?? ""}`}
+        style={{
+          display: "flex",
+          width: "100%",
+          flexDirection: "column",
+          fontSize: "inherit",
+          fontWeight: 400,
+          color: bt.color,
+          background: bt.bg,
+          colorScheme: isDark ? "dark" : "light",
+          position: "relative",
+          height: "100%",
+          maxHeight: "100%",
+          minHeight: 0,
+          ...styles.wrapper,
+        }}
+      >
+        <style>{dynamicCss}</style>
+        <style>{SCROLLBAR_CSS}</style>
 
         {/* Toolbar: Global Search + Column Picker + AI */}
         {(!hideGlobalSearch || showColumnSettings || aiMode) && (
@@ -4522,14 +4497,14 @@ Total rows: ${data.length}`;
         <div
           style={{
             position: "relative",
-            ...(useContentHeight
-              ? {
-                  height: `${clampedAutoHeight}px`,
-                  maxHeight: `${clampedAutoHeight}px`,
-                  flexShrink: 1,
-                  flexGrow: 0,
-                }
-              : { flex: "1 1 0%" }),
+            // Fill the parent when it has a resolvable height (flex-grow
+            // consumes the free space), and fall back to the content-capped
+            // height as the flex-basis when the parent is content-driven
+            // (no free space to grow into). Pure CSS so the very first paint
+            // — including SSR — is already correct and never shifts.
+            flex: "1 1 auto",
+            height: `${clampedAutoHeight}px`,
+            minHeight: 0,
           }}
         >
           {layoutLoading ? (

@@ -1,6 +1,6 @@
 {
   "name": "bolt-table",
-  "version": "0.1.52",
+  "version": "0.1.56",
   "description": "Virtualized React table with column drag & drop, pinning, resizing, sorting, filtering, and pagination.",
   "license": "MIT",
   "main": "./dist/index.js",
@@ -29,9 +29,9 @@
     "react-dom": ">=18"
   },
   "devDependencies": {
-    "@types/react": "^18.0.0",
-    "@types/react-dom": "^19.2.3",
-    "tsup": "^8.0.0",
-    "typescript": "^5.0.0"
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^19.2.4",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3"
   }
 }
